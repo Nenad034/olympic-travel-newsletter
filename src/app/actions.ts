@@ -183,3 +183,42 @@ export const resetDemoDataAction = wrap(async () => {
   revalidatePath('/liste');
   revalidatePath('/podesavanja');
 });
+
+function refreshSubscribers() {
+  revalidatePath('/pretplatnici');
+  revalidatePath('/pretplatnici/sunset');
+  revalidatePath('/liste');
+  revalidatePath('/');
+}
+
+export const createSubscriberAction = wrap(async (input: Omit<subs.ManualSubscriberInput, 'addedBy' | 'source'>) => {
+  await subs.addSubscriberManual({
+    ...input,
+    addedBy: campaigns.CURRENT_USER,
+    source: 'RUCNI_UNOS',
+  });
+  refreshSubscribers();
+});
+
+/** Vraća izveštaj umesto `ActionResult` — uvoz je delimično uspešan po prirodi. */
+export async function importSubscribersAction(
+  csv: string,
+  opts: { defaultListIds: string[]; defaultConsentNote: string },
+): Promise<{ ok: true; report: subs.ImportReport } | { ok: false; error: string }> {
+  try {
+    const report = await subs.importSubscribersCsv(csv, {
+      addedBy: campaigns.CURRENT_USER,
+      defaultListIds: opts.defaultListIds,
+      defaultConsentNote: opts.defaultConsentNote,
+    });
+    refreshSubscribers();
+    return { ok: true, report };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Nepoznata greška' };
+  }
+}
+
+export const updateSubscriberAction = wrap(async (id: string, patch: subs.SubscriberPatch) => {
+  await subs.updateSubscriber(id, patch);
+  refreshSubscribers();
+});

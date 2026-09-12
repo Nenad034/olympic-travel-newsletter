@@ -5,8 +5,9 @@ import { listIdNumber } from './campaigns';
 import { LIST_B2B_OPS, LIST_B2B_PROMO, LIST_B2C } from './seed';
 import type { Store, Subscriber } from './types';
 
-// Spec §7 — auto-subscribe. Nema ručnog unosa: subscribe se uvek okida iz izvornog sistema
-// (B2B portal ili booking) preko webhook ruta u src/app/api/webhooks/*.
+// Spec §7 — auto-subscribe: subscribe se okida iz izvornog sistema (B2B portal ili booking)
+// preko webhook ruta u src/app/api/webhooks/*. Ručni unos i CSV uvoz su dodati kao izuzetak
+// za prenos postojeće baze — na dnu fajla, sa obaveznim tragom pristanka.
 
 export async function subscribeFromPortal(input: {
   email: string;
@@ -146,5 +147,339 @@ export function sunsetCandidates(store: Store = getStore()): Subscriber[] {
     if (!promoOrB2c) return false;
     const last = s.lastOpenAt ? new Date(s.lastOpenAt) : new Date(s.createdAt);
     return last < cutoff;
+  });
+}
+
+// --- Ručni unos i CSV uvoz (marketing tim) ---------------------------------
+// Odstupanje od prvobitnog spec §7 („nema ručnog unosa"): tim mora da može da prenese
+// postojeću bazu i da doda kontakt čiji pristanak postoji van portala/bookinga. Cena tog
+// ustupka je da svaki takav zapis nosi osnov pristanka, datum i referencu na dokaz —
+// bez toga se zapis ne kreira. B2C i dalje prolazi kroz double opt-in.
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+const LIST_ALIAS: Record<string, string> = {
+  'b2b-operativna': LIST_B2B_OPS,
+  'b2b-operativni': LIST_B2B_OPS,
+  'b2b-ops': LIST_B2B_OPS,
+  operativna: LIST_B2B_OPS,
+  'b2b-promotivna': LIST_B2B_PROMO,
+  'b2b-promotivni': LIST_B2B_PROMO,
+  'b2b-promo': LIST_B2B_PROMO,
+  promotivna: LIST_B2B_PROMO,
+  b2c: LIST_B2C,
+  'b2c-newsletter': LIST_B2C,
+  newsletter: LIST_B2C,
+};
+
+/** Prihvata i pun id liste i kratku oznaku iz CSV-a. */
+export function resolveListId(raw: string, store: Store = getStore()): string | null {
+  const v = raw.trim().toLowerCase();
+  if (!v) return null;
+  if (store.lists.some((l) => l.id === v)) return v;
+  return LIST_ALIAS[v] ?? null;
+}
+
+export interface ManualSubscriberInput {
+  email: string;
+  name: string;
+  company?: string;
+  listIds: string[];
+  /** Kako je pristanak pribavljen (npr. „potpisan ugovor o saradnji"). */
+  consentNote: string;
+  /** Kad je pristanak dat — ISO ili `YYYY-MM-DD`. */
+  consentAt: string;
+  /** Referenca na dokaz (broj ugovora, ID zapisa u starom sistemu…). */
+  sourceRef: string;
+  addedBy: string;
+  source?: 'RUCNI_UNOS' | 'IMPORT_CSV';
+}
+
+export async function addSubscriberManual(
+  input: ManualSubscriberInput,
+): Promise<{ subscriber: Subscriber; created: boolean }> {
+  const store = getStore();
+  const email = input.email.trim().toLowerCase();
+  const name = input.name.trim();
+  const consentNote = input.consentNote.trim();
+  const sourceRef = input.sourceRef.trim();
+  const company = input.company?.trim() ?? '';
+
+  if (!EMAIL_RE.test(email)) throw new Error(`Neispravna adresa: ${input.email.trim() || '(prazno)'}`);
+  if (!name) throw new Error('Ime je obavezno');
+  if (!consentNote) throw new Error('Osnov pristanka je obavezan — bez njega zapis nema pravni trag');
+  if (!sourceRef) throw new Error('Referenca na dokaz pristanka je obavezna');
+
+  const listIds = [...new Set(input.listIds.map((l) => l.trim()).filter(Boolean))];
+  if (listIds.length === 0) throw new Error('Izaberi bar jednu listu');
+  for (const id of listIds) {
+    if (!store.lists.some((l) => l.id === id)) throw new Error(`Lista ne postoji: ${id}`);
+  }
+
+  const consent = new Date(input.consentAt);
+  if (!input.consentAt.trim() || Number.isNaN(consent.getTime()))
+    throw new Error('Datum pristanka nije ispravan');
+  if (consent.getTime() > Date.now() + 60_000)
+    throw new Error('Datum pristanka ne može biti u budućnosti');
+
+  // Dokumentovan pristanak ne zamenjuje potvrdu adrese — B2C ide na double opt-in i kad je uvezen.
+  const needsDoubleOptin = listIds.some(
+    (id) => store.lists.find((l) => l.id === id)?.optinMode === 'DOUBLE_OPT_IN',
+  );
+
+  await listmonk.upsertSubscriber({
+    email,
+    name,
+    lists: listIds.map(listIdNumber),
+    preconfirm: !needsDoubleOptin,
+    attribs: {
+      company,
+      source: input.source === 'IMPORT_CSV' ? 'import_csv' : 'rucni_unos',
+      consent_at: consent.toISOString(),
+      consent_note: consentNote,
+      source_ref: sourceRef,
+      added_by: input.addedBy,
+    },
+  });
+
+  return mutate((s) => {
+    const existing = s.subscribers.find((x) => x.email === email);
+    if (existing) {
+      // Ranija odjava preživljava uvoz — vraćanje odjavljenog na listu je kršenje opt-outa.
+      for (const id of listIds) {
+        if (!existing.listIds.includes(id) && !existing.unsubscribedFrom.includes(id))
+          existing.listIds.push(id);
+      }
+      if (company) existing.company = company;
+      return { subscriber: existing, created: false };
+    }
+    const sub: Subscriber = {
+      id: newId('sub'),
+      email,
+      name,
+      company: company || undefined,
+      listIds,
+      status: needsDoubleOptin ? 'UNCONFIRMED' : 'ENABLED',
+      source: input.source ?? 'RUCNI_UNOS',
+      consentAt: consent.toISOString(),
+      sourceRef,
+      consentNote,
+      addedBy: input.addedBy,
+      lastOpenAt: null,
+      createdAt: now(),
+      unsubscribedFrom: [],
+    };
+    s.subscribers.unshift(sub);
+    return { subscriber: sub, created: true };
+  });
+}
+
+export interface ImportReport {
+  total: number;
+  created: number;
+  updated: number;
+  errors: { line: number; email: string; message: string }[];
+}
+
+/** Zaglavlje CSV-a — svaka kolona prihvata nekoliko naziva (srpski i engleski). */
+const CSV_COLUMNS: Record<string, string[]> = {
+  email: ['email', 'e-mail', 'mejl', 'mail'],
+  name: ['ime', 'naziv', 'name', 'ime i prezime'],
+  company: ['firma', 'agencija', 'company', 'kompanija'],
+  lists: ['liste', 'lista', 'lists', 'list'],
+  consentAt: ['pristanak', 'pristanak_datum', 'datum_pristanka', 'consent_at', 'consent'],
+  consentNote: ['osnov', 'osnov_pristanka', 'consent_note', 'napomena'],
+  sourceRef: ['referenca', 'dokaz', 'source_ref', 'ref'],
+};
+
+export const CSV_HEADER = 'email,ime,firma,liste,pristanak,osnov,referenca';
+
+/** Minimalni CSV parser: navodnici, udvojeni navodnik kao escape, `,` ili `;` kao separator. */
+function parseDelimited(text: string): string[][] {
+  const firstLine = text.split(/\r?\n/).find((l) => l.trim().length > 0) ?? '';
+  const delim =
+    (firstLine.match(/;/g)?.length ?? 0) > (firstLine.match(/,/g)?.length ?? 0) ? ';' : ',';
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch !== '"') cell += ch;
+      else if (text[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else quoted = false;
+      continue;
+    }
+    if (ch === '"') quoted = true;
+    else if (ch === delim) {
+      row.push(cell);
+      cell = '';
+    } else if (ch === '\n') {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else if (ch !== '\r') cell += ch;
+  }
+  row.push(cell);
+  rows.push(row);
+  return rows.filter((r) => r.some((c) => c.trim() !== ''));
+}
+
+export async function importSubscribersCsv(
+  text: string,
+  opts: { addedBy: string; defaultListIds?: string[]; defaultConsentNote?: string },
+): Promise<ImportReport> {
+  const rows = parseDelimited(text.replace(/^﻿/, ''));
+  if (rows.length < 2) throw new Error('CSV mora imati zaglavlje i bar jedan red');
+
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const idx: Record<string, number> = {};
+  for (const [key, names] of Object.entries(CSV_COLUMNS)) {
+    idx[key] = header.findIndex((h) => names.includes(h));
+  }
+  if (idx.email === -1) throw new Error(`Zaglavlje nema kolonu „email“. Očekivano: ${CSV_HEADER}`);
+
+  const store = getStore();
+  const report: ImportReport = { total: 0, created: 0, updated: 0, errors: [] };
+  const seen = new Set<string>();
+
+  for (let r = 1; r < rows.length; r++) {
+    const cells = rows[r];
+    const at = (k: string) => (idx[k] >= 0 ? (cells[idx[k]] ?? '').trim() : '');
+    const email = at('email');
+    report.total++;
+    // Zaglavlje je red 1, pa je broj reda u fajlu r + 1.
+    const line = r + 1;
+    try {
+      if (seen.has(email.toLowerCase())) throw new Error('Duplikat unutar istog fajla');
+      const rawLists = at('lists');
+      const listIds = rawLists
+        ? rawLists.split(/[;|]/).map((v) => {
+            const id = resolveListId(v, store);
+            if (!id) throw new Error(`Nepoznata lista: ${v.trim()}`);
+            return id;
+          })
+        : (opts.defaultListIds ?? []);
+      const res = await addSubscriberManual({
+        email,
+        name: at('name') || email.split('@')[0],
+        company: at('company'),
+        listIds,
+        consentNote: at('consentNote') || opts.defaultConsentNote || '',
+        consentAt: at('consentAt') || '',
+        sourceRef: at('sourceRef') || `csv-uvoz red ${line}`,
+        addedBy: opts.addedBy,
+        source: 'IMPORT_CSV',
+      });
+      seen.add(email.toLowerCase());
+      if (res.created) report.created++;
+      else report.updated++;
+    } catch (e) {
+      report.errors.push({
+        line,
+        email,
+        message: e instanceof Error ? e.message : 'Nepoznata greška',
+      });
+    }
+  }
+  return report;
+}
+
+export interface SubscriberPatch {
+  email?: string;
+  name?: string;
+  company?: string;
+  listIds?: string[];
+  consentNote?: string;
+  consentAt?: string;
+  sourceRef?: string;
+  /** Potvrda da se kontakt svesno vraća na listu sa koje se ranije odjavio. */
+  allowResubscribe?: boolean;
+}
+
+/** Ispravka postojećeg zapisa. Trag pristanka za zapise iz portala/bookinga se ne dira —
+ * on je ono što izvorni sistem tvrdi, a ne nešto što marketing tim naknadno podešava. */
+export async function updateSubscriber(id: string, patch: SubscriberPatch): Promise<Subscriber> {
+  const store = getStore();
+  const current = store.subscribers.find((s) => s.id === id);
+  if (!current) throw new Error('Pretplatnik ne postoji');
+
+  const email = patch.email === undefined ? current.email : patch.email.trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) throw new Error(`Neispravna adresa: ${patch.email?.trim() || '(prazno)'}`);
+  if (email !== current.email && store.subscribers.some((s) => s.id !== id && s.email === email))
+    throw new Error(`Adresa ${email} već postoji u bazi`);
+
+  const name = patch.name === undefined ? current.name : patch.name.trim();
+  if (!name) throw new Error('Ime je obavezno');
+  const company = patch.company === undefined ? (current.company ?? '') : patch.company.trim();
+
+  const listIds =
+    patch.listIds === undefined
+      ? [...current.listIds]
+      : [...new Set(patch.listIds.map((l) => l.trim()).filter(Boolean))];
+  if (listIds.length === 0) throw new Error('Kontakt mora ostati na bar jednoj listi');
+  for (const lid of listIds) {
+    if (!store.lists.some((l) => l.id === lid)) throw new Error(`Lista ne postoji: ${lid}`);
+  }
+  const backOn = listIds.filter((lid) => current.unsubscribedFrom.includes(lid));
+  if (backOn.length > 0 && !patch.allowResubscribe) {
+    const names = backOn.map((lid) => store.lists.find((l) => l.id === lid)?.name ?? lid);
+    throw new Error(`Kontakt se odjavio sa: ${names.join(', ')} — vraćanje traži izričitu potvrdu`);
+  }
+
+  const manual = current.source === 'RUCNI_UNOS' || current.source === 'IMPORT_CSV';
+  let consentAt = current.consentAt;
+  let consentNote = current.consentNote;
+  let sourceRef = current.sourceRef;
+  if (manual) {
+    if (patch.consentAt !== undefined) {
+      const d = new Date(patch.consentAt);
+      if (!patch.consentAt.trim() || Number.isNaN(d.getTime()))
+        throw new Error('Datum pristanka nije ispravan');
+      if (d.getTime() > Date.now() + 60_000)
+        throw new Error('Datum pristanka ne može biti u budućnosti');
+      consentAt = d.toISOString();
+    }
+    if (patch.consentNote !== undefined) {
+      consentNote = patch.consentNote.trim();
+      if (!consentNote) throw new Error('Osnov pristanka ne sme da ostane prazan');
+    }
+    if (patch.sourceRef !== undefined) {
+      sourceRef = patch.sourceRef.trim();
+      if (!sourceRef) throw new Error('Referenca na dokaz ne sme da ostane prazna');
+    }
+  }
+
+  // Nova lista sa double opt-in pravilom traži potvrdu adrese kao i kod prvog unosa.
+  const added = listIds.filter((lid) => !current.listIds.includes(lid));
+  const newDoubleOptin = added.some(
+    (lid) => store.lists.find((l) => l.id === lid)?.optinMode === 'DOUBLE_OPT_IN',
+  );
+
+  await listmonk.upsertSubscriber({
+    email,
+    name,
+    lists: listIds.map(listIdNumber),
+    preconfirm: !newDoubleOptin,
+    attribs: { company, source: current.source.toLowerCase(), source_ref: sourceRef },
+  });
+
+  return mutate((s) => {
+    const sub = s.subscribers.find((x) => x.id === id);
+    if (!sub) throw new Error('Pretplatnik ne postoji');
+    sub.email = email;
+    sub.name = name;
+    sub.company = company || undefined;
+    sub.listIds = listIds;
+    sub.unsubscribedFrom = sub.unsubscribedFrom.filter((lid) => !listIds.includes(lid));
+    sub.consentAt = consentAt;
+    sub.consentNote = consentNote;
+    sub.sourceRef = sourceRef;
+    if (newDoubleOptin && sub.status === 'ENABLED') sub.status = 'UNCONFIRMED';
+    return sub;
   });
 }

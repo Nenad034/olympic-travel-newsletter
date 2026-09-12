@@ -26,7 +26,7 @@ export default function SunsetPage() {
         Operativni B2B tok je izuzet — partner mora primati cenovnike i rokove bez obzira na otvaranja. Re-engagement
         kampanja se pravi kao i svaka druga (segment: promo/B2C) i prolazi kroz isti human-approval gate.
       </Notice>
-      <SubscribersTable subscribers={[...candidates, ...paused]} lists={store.lists} emptyText="Nema neaktivnih pretplatnika — baza je zdrava." />
+      <SubscribersTable subscribers={[...candidates, ...paused]} lists={store.lists} events={store.events} emptyText="Nema neaktivnih pretplatnika — baza je zdrava." />
     </div>
   );
 }

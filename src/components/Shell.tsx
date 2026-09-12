@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
@@ -10,6 +10,7 @@ import RightPanel from './RightPanel';
 import StatusBar from './StatusBar';
 import CommandPalette from './CommandPalette';
 import { TabsProvider } from './TabsContext';
+import { InspectorProvider, type InspectTarget } from './InspectorContext';
 import { NAV_GROUPS, groupForPath } from '@/lib/nav';
 
 const SIDEBAR_COLLAPSED_KEY = 'ot-newsletter-sidebar-collapsed';
@@ -40,6 +41,7 @@ export default function Shell({
   const [width, setWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [rightOpen, setRightOpen] = useState(false);
   const [activeGroupId, setActiveGroupId] = useState(() => groupForPath(pathname).id);
+  const [inspectTarget, setInspectTarget] = useState<InspectTarget | null>(null);
   const [leftColumnWidth, setLeftColumnWidth] = useState(43 + DEFAULT_SIDEBAR_WIDTH);
   const leftColRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -60,6 +62,8 @@ export default function Shell({
   if (lastPath !== pathname) {
     setLastPath(pathname);
     setActiveGroupId(groupForPath(pathname).id);
+    // Selekcija pripada stranici na kojoj je napravljena — druga putanja je ne nasleđuje.
+    if (inspectTarget) setInspectTarget(null);
   }
 
   useLayoutEffect(() => {
@@ -81,6 +85,20 @@ export default function Shell({
       return !v;
     });
   }
+
+  // Klik na zapis puni desni panel i otvara ga ako je bio zatvoren — brze info bez navigacije.
+  const inspect = useCallback((target: InspectTarget | null) => {
+    setInspectTarget(target);
+    if (!target) return;
+    setRightOpen(true);
+    try {
+      localStorage.setItem(RIGHT_OPEN_KEY, '1');
+    } catch {
+      /* prazno */
+    }
+  }, []);
+
+  const inspector = useMemo(() => ({ target: inspectTarget, inspect }), [inspectTarget, inspect]);
 
   function toggleRight() {
     setRightOpen((v) => {
@@ -124,6 +142,7 @@ export default function Shell({
 
   return (
     <TabsProvider>
+      <InspectorProvider value={inspector}>
       <div className="flex h-screen flex-col overflow-hidden bg-bg text-ink">
         <TopBar leftColumnWidth={leftColumnWidth} />
         <div className="flex min-h-0 flex-1">
@@ -167,6 +186,7 @@ export default function Shell({
         <StatusBar fullName={fullName} roleLabel={roleLabel} />
         <CommandPalette />
       </div>
+      </InspectorProvider>
     </TabsProvider>
   );
 }

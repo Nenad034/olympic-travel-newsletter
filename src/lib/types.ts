@@ -40,11 +40,17 @@ export interface Subscriber {
   name: string;
   listIds: string[];
   status: SubscriberStatus;
-  /** Izvor prijave (spec §7) — nikad ručni unos. */
-  source: 'PORTAL' | 'BOOKING' | 'INTERNI_TEST';
+  /** Izvor prijave (spec §7). Automatski tokovi su PORTAL i BOOKING; RUCNI_UNOS i IMPORT_CSV
+   * su unos od strane marketing tima i traže dokumentovan osnov pristanka (`consentNote`). */
+  source: 'PORTAL' | 'BOOKING' | 'INTERNI_TEST' | 'RUCNI_UNOS' | 'IMPORT_CSV';
   consentAt: string;
-  /** Referenca na izvorni zapis (portal nalog / booking) — za pravo na brisanje i reviziju. */
+  /** Referenca na izvorni zapis (portal nalog / booking / dokaz pristanka za ručni unos) —
+   * za pravo na brisanje i reviziju. */
   sourceRef: string;
+  /** Kako je pristanak pribavljen — obavezno kod ručnog unosa i CSV uvoza (ZZPL trag). */
+  consentNote?: string;
+  /** Ko je zapis uneo ili uvezao (prazno za automatske tokove). */
+  addedBy?: string;
   company?: string;
   lastOpenAt: string | null;
   createdAt: string;

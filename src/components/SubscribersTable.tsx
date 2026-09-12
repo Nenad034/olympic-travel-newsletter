@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Icon from './Icon';
 import Notice from './Notice';
@@ -15,30 +15,56 @@ import {
   unsubscribeAction,
   type ActionResult,
 } from '@/app/actions';
+import { useInspector } from './InspectorContext';
 import { fmtDate, fmtRelative } from '@/lib/datum';
-import type { MailingList, Subscriber } from '@/lib/types';
+import type { DeliveryEvent, MailingList, Subscriber } from '@/lib/types';
 
 const SOURCE_LABEL: Record<Subscriber['source'], string> = {
   PORTAL: 'B2B portal',
   BOOKING: 'booking',
   INTERNI_TEST: 'interno',
+  RUCNI_UNOS: 'ručni unos',
+  IMPORT_CSV: 'CSV uvoz',
 };
 
 export default function SubscribersTable({
   subscribers,
   lists,
+  events = [],
   showLists = true,
   emptyText = 'Nema pretplatnika.',
 }: {
   subscribers: Subscriber[];
   lists: MailingList[];
+  /** Isporuka (bounce/complaint/delivery) — prosleđuje se u desni panel uz selektovani red. */
+  events?: DeliveryEvent[];
   showLists?: boolean;
   emptyText?: string;
 }) {
   const router = useRouter();
+  const { target, inspect } = useInspector();
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
   const [q, setQ] = useState('');
+
+  // Posle akcije server vraća nove zapise — selekcija mora da prati sveže podatke,
+  // inače desni panel prikazuje stanje od pre odjave/pauze.
+  useEffect(() => {
+    if (!target) return;
+    const fresh = subscribers.find((x) => x.id === target.subscriber.id);
+    if (!fresh) {
+      inspect(null);
+      return;
+    }
+    if (fresh !== target.subscriber) {
+      inspect({
+        kind: 'subscriber',
+        subscriber: fresh,
+        lists,
+        events: events.filter((e) => e.email === fresh.email),
+      });
+    }
+  }, [subscribers, lists, events, target, inspect]);
 
   function run(fn: () => Promise<ActionResult>, okText: string) {
     setMsg(null);
@@ -62,6 +88,7 @@ export default function SubscribersTable({
           <input className="input !pl-7" placeholder="Pretraga: email, ime, firma, referenca…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <span className="text-[11px] text-ink-faint">{rows.length} od {subscribers.length}</span>
+        <span className="text-[11px] text-ink-faint">· klik na red = brze info desno</span>
       </div>
       {msg && <Notice tone={msg.tone} className="mb-3">{msg.text}</Notice>}
       <div className="overflow-hidden rounded-lg border border-border bg-panel">
@@ -82,8 +109,24 @@ export default function SubscribersTable({
             )}
             {rows.map((s) => {
               const promoLists = lists.filter((l) => s.listIds.includes(l.id) && l.unsubscribeAllowed);
+              const selected = target?.subscriber.id === s.id;
               return (
-                <TableRow key={s.id}>
+                <TableRow
+                  key={s.id}
+                  onClick={() =>
+                    inspect(
+                      selected
+                        ? null
+                        : {
+                            kind: 'subscriber',
+                            subscriber: s,
+                            lists,
+                            events: events.filter((e) => e.email === s.email),
+                          },
+                    )
+                  }
+                  className={`cursor-pointer ${selected ? 'bg-accent-soft' : ''}`}
+                >
                   <TableCell>
                     <div className="font-medium text-ink">{s.name}{s.company ? <span className="text-ink-faint"> · {s.company}</span> : null}</div>
                     <div className="font-mono text-[11px] text-ink-faint">{s.email}</div>
@@ -108,7 +151,7 @@ export default function SubscribersTable({
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-ink-dim">{s.lastOpenAt ? fmtRelative(s.lastOpenAt) : '—'}</TableCell>
                   <TableCell>
-                    <div className="flex justify-end gap-1">
+                    <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                       {s.status === 'UNCONFIRMED' && (
                         <Button size="sm" variant="secondary" disabled={pending} title="Simuliraj klik na double opt-in link" onClick={() => run(() => confirmOptinAction(s.id), 'Prijava potvrđena.')}>
                           <Icon name="check" className="!text-[12px]" /> potvrdi

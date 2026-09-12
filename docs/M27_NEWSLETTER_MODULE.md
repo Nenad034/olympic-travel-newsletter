@@ -137,7 +137,16 @@ Zakazivanje ne zaobilazi human-approval gate iz sekcije 5.2 — odobrava se i sa
 - **B2B:** kreiranje naloga na portalu → API poziv ka Listmonk-u → subagent se automatski dodaje na operativnu listu (obavezno) i promotivnu listu (opt-out dostupan odmah).
 - **B2C:** potvrda bookinga sa označenim pristankom → API poziv ka Listmonk-u → dodavanje na B2C listu → pokreće se double opt-in flow.
 
-Nema ručnog unosa u bilo kom slučaju — subscribe se uvek okida iz izvornog sistema (portal ili booking), čime se izbegava dupliranje baze i neusklađenost podataka o pristanku.
+Automatski tok je pravilo: subscribe se okida iz izvornog sistema (portal ili booking), čime se izbegava dupliranje baze i neusklađenost podataka o pristanku.
+
+### 7.1 Ručni unos i CSV uvoz (izuzetak)
+
+Dve situacije automatski tok ne pokriva: prenos postojeće baze subagenata iz starog sistema i kontakt čiji pristanak je pribavljen van portala/bookinga (potpisan ugovor, prijavni formular na sajmu). Za njih stranica „Pretplatnici“ ima ručni unos i CSV uvoz, uz sledeća ograničenja:
+
+- Svaki takav zapis nosi **osnov pristanka**, **datum pristanka** i **referencu na dokaz**; bez ijednog od ta tri polja zapis se ne kreira. Izvor se beleži kao `RUCNI_UNOS` ili `IMPORT_CSV`, uz ime osobe koja je unela zapis.
+- Dokumentovan pristanak ne zamenjuje potvrdu adrese — unos na B2C listu i dalje ulazi kao `unconfirmed` i prolazi kroz double opt-in.
+- Ranija odjava preživljava uvoz: kontakt koji se odjavio sa neke liste se uvozom ne vraća na nju.
+- CSV kolone: `email,ime,firma,liste,pristanak,osnov,referenca` (separator zarez ili tačka-zarez, više lista razdvojeno sa `;` ili `|`). Obavezan je samo `email`; ostalo se dopunjava vrednostima zadatim u formi. Neispravni redovi se odbijaju pojedinačno, ostatak fajla prolazi, a izveštaj navodi broj reda i razlog.
 
 ---
 

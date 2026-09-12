@@ -35,7 +35,7 @@ export default async function ListPage({ params }: { params: Promise<{ id: strin
         <StatTile label="Odjavljeno" value={store.subscribers.filter((s) => s.unsubscribedFrom.includes(list.id)).length} icon="bell-slash" />
         <StatTile label="Kampanja poslato" value={sentHere.length} icon="send" hint={totals.sent ? `open ${Math.round((totals.opened / totals.sent) * 100)}%` : undefined} />
       </div>
-      <SubscribersTable subscribers={members} lists={store.lists} showLists={false} />
+      <SubscribersTable subscribers={members} lists={store.lists} events={store.events} showLists={false} />
     </div>
   );
 }
