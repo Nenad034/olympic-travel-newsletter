@@ -80,6 +80,33 @@ export async function sendTest(id: number, emails: string[], payload: ListmonkCa
   await call('POST', `/campaigns/${id}/test`, { ...payload, subscribers: emails });
 }
 
+/**
+ * Spec §3.1.1 — operativni B2B tok se NE šalje kao Listmonk "kampanja" (koja po defaultu dobija
+ * unsubscribe link), nego kao transakcioni mejl (`POST /api/tx`, po primaocu). Transakcioni
+ * mehanizam po prirodi nema unsubscribe link — nema ručnog uklanjanja po šablonu, ni rizika da
+ * operativna poruka ode kroz pogrešan tip kampanje. Zahteva Listmonk tx šablon koji renderuje
+ * `{{ .Tx.Data.body }}` (LISTMONK_TX_TEMPLATE_ID, podrazumevano 1).
+ */
+export async function sendTransactional(input: {
+  emails: string[];
+  subject: string;
+  html: string;
+  fromEmail: string;
+  headers: Record<string, string>[];
+}): Promise<ListmonkResult> {
+  if (!config()) return { mode: 'MOCK', campaignId: ++mockCounter };
+  const templateId = Number(process.env.LISTMONK_TX_TEMPLATE_ID ?? '1');
+  await call('POST', '/tx', {
+    subscriber_emails: input.emails,
+    template_id: templateId,
+    data: { subject: input.subject, body: input.html },
+    headers: input.headers,
+    from_email: input.fromEmail,
+    content_type: 'html',
+  });
+  return { mode: 'LIVE', campaignId: ++mockCounter };
+}
+
 /** Auto-subscribe (spec §7) — `POST /subscribers` sa `preconfirm_subscriptions` po toku. */
 export async function upsertSubscriber(input: {
   email: string;

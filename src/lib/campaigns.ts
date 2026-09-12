@@ -79,6 +79,7 @@ export function createCampaign(input: {
       sendAt: null,
       sentAt: null,
       listmonkCampaignId: null,
+      deliveryMode: list.unsubscribeAllowed ? 'KAMPANJA' : 'TRANSAKCIONO',
       stats: { sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complaints: 0 },
       history: [],
       createdBy: CURRENT_USER,
@@ -171,7 +172,19 @@ export async function sendTestEmail(id: string, recipients: string[]): Promise<C
   const emails = recipients.map((e) => e.trim()).filter(Boolean);
   if (!emails.length) throw new Error('Unesite bar jednog test primaoca');
   const payload = buildPayload(store, c);
-  if (c.listmonkCampaignId) await listmonk.sendTest(c.listmonkCampaignId, emails, payload);
+  if (c.deliveryMode === 'TRANSAKCIONO') {
+    // Operativni tok nema Listmonk kampanju — test ide istim transakcionim kanalom (§3.1.1).
+    const list = requireList(store, c.listId);
+    await listmonk.sendTransactional({
+      emails,
+      subject: `[TEST] ${c.subject}`,
+      html: payload.body,
+      fromEmail: `Olympic Travel <obavestenja@${list.sendingDomain}>`,
+      headers: payload.headers ?? [],
+    });
+  } else if (c.listmonkCampaignId) {
+    await listmonk.sendTest(c.listmonkCampaignId, emails, payload);
+  }
   return mutate((s) => {
     const cc = requireCampaign(s, id);
     cc.testSentAt = now();
@@ -196,9 +209,34 @@ function buildPayload(store: Store, c: Campaign): listmonk.ListmonkCampaignPaylo
   };
 }
 
+function activeRecipients(store: Store, listId: string): string[] {
+  return store.subscribers
+    .filter((sub) => sub.listIds.includes(listId) && sub.status === 'ENABLED')
+    .map((sub) => sub.email);
+}
+
+/**
+ * Spec §3.1.1 — operativni B2B tok se šalje transakciono (`/api/tx`, po primaocu, bez
+ * unsubscribe linka), ne kao Listmonk kampanja. Vraća simbolički ID pošiljke za dnevnik.
+ */
+async function sendTransactionalNow(store: Store, c: Campaign): Promise<listmonk.ListmonkResult> {
+  const list = requireList(store, c.listId);
+  return listmonk.sendTransactional({
+    emails: activeRecipients(store, c.listId),
+    subject: c.subject,
+    html: c.bodyHtml ?? renderCampaignHtml(store, c),
+    fromEmail: `Olympic Travel <obavestenja@${list.sendingDomain}>`,
+    headers: [{ 'X-SES-CONFIGURATION-SET': list.configurationSet }],
+  });
+}
+
 /**
  * Human-approval gate (spec §5.2 korak 3, §6.3). Odobrava se sadržaj I termin zajedno:
- * `sendAt = null` → pošalji odmah (RUNNING), inače → SCHEDULED sa `send_at` u Listmonk-u.
+ * `sendAt = null` → pošalji odmah, inače → SCHEDULED.
+ *
+ * KAMPANJA (promo/B2C): Listmonk kampanja sa `send_at` — motor sam zakazuje i šalje.
+ * TRANSAKCIONO (operativni tok, §3.1.1): Listmonk `/api/tx` nema zakazivanje, pa zakazano
+ * slanje pokreće `processDueCampaigns` kad termin prođe; sadržaj je zaključan od odobrenja.
  */
 export async function approve(id: string, sendAt: string | null): Promise<Campaign> {
   const store = getStore();
@@ -209,25 +247,35 @@ export async function approve(id: string, sendAt: string | null): Promise<Campai
     throw new Error('Termin slanja je u prošlosti');
   }
   const payload = buildPayload(store, { ...c, sendAt });
-  const result = await listmonk.createCampaign(payload);
-  if (sendAt) await listmonk.setCampaignStatus(result.campaignId, 'scheduled');
-  else await listmonk.setCampaignStatus(result.campaignId, 'running');
+  const transactional = c.deliveryMode === 'TRANSAKCIONO';
+
+  let result: listmonk.ListmonkResult | null = null;
+  if (transactional) {
+    if (!sendAt) result = await sendTransactionalNow(store, { ...c, bodyHtml: payload.body });
+  } else {
+    result = await listmonk.createCampaign(payload);
+    await listmonk.setCampaignStatus(result.campaignId, sendAt ? 'scheduled' : 'running');
+  }
 
   return mutate((s) => {
     const cc = requireCampaign(s, id);
     cc.approvedBy = CURRENT_USER;
     cc.approvedAt = now();
-    cc.listmonkCampaignId = result.campaignId;
+    cc.listmonkCampaignId = result?.campaignId ?? null;
     cc.bodyHtml = payload.body;
     if (sendAt) {
       cc.sendAt = sendAt;
       cc.status = 'SCHEDULED';
-      log(cc, 'Odobreno i zakazano', formatSr(sendAt));
+      log(cc, 'Odobreno i zakazano', `${formatSr(sendAt)}${transactional ? ' · transakciono slanje' : ''}`);
     } else {
       cc.status = 'RUNNING';
-      log(cc, 'Odobreno — pošalji odmah', `Listmonk kampanja #${result.campaignId}`);
-      // Mock motor: slanje se "završava" odmah, sa realističnom statistikom po veličini liste.
-      if (result.mode === 'MOCK') finishSend(s, cc);
+      log(
+        cc,
+        'Odobreno — pošalji odmah',
+        transactional ? 'transakciono (/api/tx), bez unsubscribe linka' : `Listmonk kampanja #${result!.campaignId}`,
+      );
+      // Transakciono slanje je sinhrono; mock motor "završava" i kampanje odmah.
+      if (transactional || result?.mode === 'MOCK') finishSend(s, cc);
     }
     return cc;
   });
@@ -273,25 +321,43 @@ export function deleteCampaign(id: string): void {
   });
 }
 
-/** Mock motora: zakazane kampanje čiji je termin prošao prelaze u SENT pri sledećem čitanju. */
+/**
+ * Scheduler za dospele zakazane kampanje — poziva se pri svakom čitanju (layout, /api/summary).
+ * TRANSAKCIONO: stvarno šalje preko `/api/tx` (Listmonk nema send_at za tx mejlove).
+ * KAMPANJA u mock režimu: simulira završetak; u LIVE režimu Listmonk sam šalje, ovde se ne dira.
+ */
 export function processDueCampaigns(): void {
   const store = getStore();
   const due = store.campaigns.filter(
     (c) => c.status === 'SCHEDULED' && c.sendAt && new Date(c.sendAt).getTime() <= Date.now(),
   );
-  if (!due.length || listmonk.listmonkMode() === 'LIVE') return;
-  mutate((s) => {
-    for (const d of due) {
+  if (!due.length) return;
+  const live = listmonk.listmonkMode() === 'LIVE';
+  const toFinish = due.filter((c) => c.deliveryMode === 'TRANSAKCIONO' || !live);
+  if (!toFinish.length) return;
+  // Transakciono slanje ide asinhrono ka motoru; lokalno stanje se odmah prebacuje u SENT da
+  // dva paralelna čitanja ne pošalju istu kampanju dvaput.
+  const pending = mutate((s) => {
+    const out: Campaign[] = [];
+    for (const d of toFinish) {
       const c = requireCampaign(s, d.id);
       finishSend(s, c);
+      if (c.deliveryMode === 'TRANSAKCIONO' && live) out.push(c);
     }
+    return out;
   });
+  for (const c of pending) {
+    void sendTransactionalNow(store, c).catch((e: unknown) => {
+      mutate((s) => {
+        const cc = requireCampaign(s, c.id);
+        log(cc, 'Greška pri transakcionom slanju', e instanceof Error ? e.message : String(e), 'Listmonk');
+      });
+    });
+  }
 }
 
 function finishSend(store: Store, c: Campaign) {
-  const recipients = store.subscribers.filter(
-    (sub) => sub.listIds.includes(c.listId) && sub.status === 'ENABLED',
-  ).length;
+  const recipients = activeRecipients(store, c.listId).length;
   const opened = Math.round(recipients * (c.segment === 'B2C' ? 0.42 : 0.78));
   c.stats = {
     sent: recipients,
@@ -303,7 +369,7 @@ function finishSend(store: Store, c: Campaign) {
   };
   c.status = 'SENT';
   c.sentAt = now();
-  log(c, 'Poslato', `${recipients} primalaca`, 'Listmonk');
+  log(c, 'Poslato', `${recipients} primalaca${c.deliveryMode === 'TRANSAKCIONO' ? ' · transakciono' : ''}`, 'Listmonk');
 }
 
 export function formatSr(iso: string): string {

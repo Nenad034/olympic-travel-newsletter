@@ -62,7 +62,9 @@ export default function ListsPage() {
       <div className="mt-4 rounded-lg border border-border bg-panel p-4 text-xs text-ink-dim">
         <strong className="text-ink">Zašto dva domena:</strong> loša reputacija na jednoj strani (npr. spam prijave krajnjih klijenata) ne sme da ugrozi
         isporuku kritične B2B komunikacije. <strong className="text-ink">Zašto dva B2B toka:</strong> odjava sa promotivnog toka ne sme da utiče na
-        operativna obaveštenja (cenovnici, alotmani, rokovi) — zato odvojene liste i odvojeni configuration set-ovi, ista baza.
+        operativna obaveštenja (cenovnici, alotmani, rokovi) — zato odvojene liste i odvojeni configuration set-ovi, ista baza.{' '}
+        <strong className="text-ink">Operativni tok se šalje transakciono</strong> (Listmonk <code className="font-mono">/api/tx</code>, spec §3.1.1) — taj mehanizam po prirodi
+        nema unsubscribe link, pa nema ni rizika da operativna poruka ode kroz pogrešan tip kampanje.
       </div>
     </div>
   );

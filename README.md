@@ -26,6 +26,7 @@ Nacrt ──(Claude popuni šablon)──▶ Nacrt ──▶ Čeka odobrenje ─
 
 - Odobrava se **sadržaj i termin zajedno**; promena termina posle odobrenja ne traži ponovno odobrenje sadržaja.
 - Izmena sadržaja posle slanja na odobrenje vraća kampanju u nacrt.
+- Operativni B2B tok se šalje **transakciono** (Listmonk `/api/tx`, bez unsubscribe linka, spec §3.1.1); promotivni i B2C kao regularna Listmonk kampanja sa `send_at`.
 - Više kampanja može biti zakazano paralelno; kalendar upozorava kad su dve bliže od podešenog razmaka (SES throughput).
 
 ## Pokretanje

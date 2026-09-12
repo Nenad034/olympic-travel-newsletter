@@ -59,7 +59,7 @@ const HELP: HelpBlock[] = [
     match: (p) => p.startsWith('/liste'),
     title: 'Liste i tokovi',
     points: [
-      'B2B operativni: auto opt-in, bez odjave — deo poslovnog odnosa.',
+      'B2B operativni: auto opt-in, bez odjave — šalje se transakciono (/api/tx), ne kao kampanja (§3.1.1).',
       'B2B promotivni: opt-out po defaultu, odjava ne dira operativni tok.',
       'B2C: eksplicitan čekboks + double opt-in; consent timestamp i izvor prijave.',
     ],

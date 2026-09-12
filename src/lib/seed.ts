@@ -177,6 +177,7 @@ const campaigns: Campaign[] = [
     sendAt: null,
     sentAt: daysAgo(8, 9),
     listmonkCampaignId: 41,
+    deliveryMode: 'TRANSAKCIONO',
     stats: { sent: 12, delivered: 12, opened: 11, clicked: 9, bounced: 0, complaints: 0 },
     history: [
       { at: daysAgo(10, 11), actor: 'Content agent', action: 'Nacrt kreiran' },
@@ -220,6 +221,7 @@ const campaigns: Campaign[] = [
     sendAt: null,
     sentAt: daysAgo(4, 9),
     listmonkCampaignId: 42,
+    deliveryMode: 'KAMPANJA',
     stats: b2bStats,
     history: [
       { at: daysAgo(6, 9), actor: 'Content agent', action: 'Nacrt kreiran' },
@@ -264,6 +266,7 @@ const campaigns: Campaign[] = [
     sendAt: daysAhead(3, 8, 0),
     sentAt: null,
     listmonkCampaignId: 43,
+    deliveryMode: 'KAMPANJA',
     stats: { sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complaints: 0 },
     history: [
       { at: daysAgo(2, 9), actor: 'Content agent', action: 'Nacrt kreiran' },
@@ -306,6 +309,7 @@ const campaigns: Campaign[] = [
     sendAt: daysAhead(3, 8, 20),
     sentAt: null,
     listmonkCampaignId: 44,
+    deliveryMode: 'KAMPANJA',
     stats: { sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complaints: 0 },
     history: [
       { at: daysAgo(1, 9), actor: 'Content agent', action: 'Nacrt kreiran' },
@@ -347,6 +351,7 @@ const campaigns: Campaign[] = [
     sendAt: null,
     sentAt: null,
     listmonkCampaignId: null,
+    deliveryMode: 'TRANSAKCIONO',
     stats: { sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complaints: 0 },
     history: [
       { at: daysAgo(0, 7), actor: 'Content agent', action: 'Nacrt kreiran' },
@@ -376,6 +381,7 @@ const campaigns: Campaign[] = [
     sendAt: null,
     sentAt: null,
     listmonkCampaignId: null,
+    deliveryMode: 'KAMPANJA',
     stats: { sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complaints: 0 },
     history: [{ at: daysAgo(0, 6), actor: 'Content agent', action: 'Nacrt kreiran' }],
     createdBy: 'Content agent',

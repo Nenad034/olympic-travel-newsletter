@@ -8,6 +8,7 @@ import Section from '@/components/Section';
 import StatTile from '@/components/StatTile';
 import { SegmentBadge, StatusBadge } from '@/components/Badges';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   approveAction,
   cancelAction,
@@ -103,6 +104,9 @@ export default function CampaignWorkbench({
             <h1 className="text-lg font-semibold text-ink">{c.name}</h1>
             <StatusBadge status={c.status} />
             <SegmentBadge segment={c.segment} />
+            <Badge variant={c.deliveryMode === 'TRANSAKCIONO' ? 'outline' : 'secondary'} title={c.deliveryMode === 'TRANSAKCIONO' ? 'Spec §3.1.1 — operativni tok ide kao transakcioni mejl (Listmonk /api/tx), bez unsubscribe linka' : 'Regularna Listmonk kampanja sa unsubscribe linkom'}>
+              {c.deliveryMode === 'TRANSAKCIONO' ? 'transakciono · bez odjave' : 'Listmonk kampanja'}
+            </Badge>
           </div>
           <div className="mt-0.5 text-xs text-ink-faint">
             {list.name} · <span className="font-mono">{list.sendingDomain}</span> ·{' '}
@@ -304,7 +308,11 @@ export default function CampaignWorkbench({
                   >
                     <span className="block font-medium">{m === 'NOW' ? 'Pošalji odmah' : 'Zakaži za datum i vreme'}</span>
                     <span className="block text-[11px] text-ink-faint">
-                      {m === 'NOW' ? `Listmonk kreće odmah ka ${list.recipients} primalaca` : 'Listmonk send_at, status „scheduled“, izmenljivo do slanja'}
+                      {m === 'NOW'
+                        ? `${c.deliveryMode === 'TRANSAKCIONO' ? 'Transakciono (/api/tx)' : 'Listmonk kampanja'} kreće odmah ka ${list.recipients} primalaca`
+                        : c.deliveryMode === 'TRANSAKCIONO'
+                          ? 'Modul šalje transakciono kad termin prođe; izmenljivo do slanja'
+                          : 'Listmonk send_at, status „scheduled“, izmenljivo do slanja'}
                     </span>
                   </button>
                 ))}

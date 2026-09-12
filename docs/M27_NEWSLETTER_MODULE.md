@@ -53,6 +53,16 @@ Dva odvojena toka, iste baze:
   - Standardan unsubscribe link.
   - Odjava sa ovog toka ne sme da utiče na operativni tok.
 
+#### 3.1.1 Unsubscribe mehanizam po toku
+
+Listmonk automatski generiše unsubscribe link u footeru svake kampanje, vezan za konkretnu listu (ne za celu bazu). Ovo se uklapa direktno u podelu tokova:
+
+- **B2C** — standardan unsubscribe, obavezan po zakonu.
+- **B2B promotivni tok** — standardan unsubscribe; subagent se odjavljuje samo sa promocija, operativni tok ostaje netaknut (odvojene liste).
+- **B2B operativni tok** — **bez** unsubscribe opcije, jer nije marketing nego deo poslovnog odnosa.
+
+Preporuka: operativni tok se ne šalje kao Listmonk "kampanja" (koja po defaultu dobija unsubscribe link), nego kao **transakcioni mejl** preko Listmonk-ovog transactional API-ja — taj mehanizam po prirodi nema unsubscribe link jer nije marketing komunikacija, čime se izbegava ručno podešavanje/uklanjanje linka po template-u i rizik da neko greškom pošalje operativnu poruku kroz pogrešan tip kampanje.
+
 ### 3.2 B2C (krajnji klijenti)
 
 - Jedna lista, eksplicitan opt-in u trenutku bookinga (čekboks, ne prećutna saglasnost).
@@ -154,3 +164,4 @@ Nema ručnog unosa u bilo kom slučaju — subscribe se uvek okida iz izvornog s
 - Da li custom UI sloj ide kao zaseban modul ili deo postojećeg content/marketing agent interfejsa.
 - Retencija test/staging liste i ko su interni test primaoci.
 - Da li je potreban prag/pravilo za automatsko upozorenje kad se dve velike kampanje zakažu preblizu jedna drugoj (sekcija 6.2), ili je dovoljna ručna provera od strane marketing tima.
+- Potvrditi konačnu odluku: operativni B2B tok kao transakcioni send vs. kampanja bez unsubscribe linka (sekcija 3.1.1).

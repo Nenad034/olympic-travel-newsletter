@@ -128,6 +128,9 @@ export interface Campaign {
   sentAt: string | null;
   /** ID kampanje u Listmonk-u posle sinhronizacije (null dok se ne pošalje ka motoru). */
   listmonkCampaignId: number | null;
+  /** Spec §3.1.1 — operativni B2B tok ide kao transakcioni mejl (Listmonk /api/tx, bez
+   * unsubscribe linka); promotivni i B2C tok kao regularna Listmonk kampanja. */
+  deliveryMode: 'KAMPANJA' | 'TRANSAKCIONO';
   stats: CampaignStats;
   history: CampaignEvent[];
   createdBy: string;
