@@ -7,7 +7,7 @@ import { claudeConfigured } from '@/lib/claude';
 
 export default async function CampaignPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  processDueCampaigns();
+  await processDueCampaigns();
   const store = getStore();
   const campaign = store.campaigns.find((c) => c.id === id);
   if (!campaign) notFound();

@@ -26,7 +26,7 @@ export default async function CampaignsPage({
   searchParams: Promise<{ status?: string; segment?: string }>;
 }) {
   const { status = 'SVE', segment } = await searchParams;
-  processDueCampaigns();
+  await processDueCampaigns();
   const store = getStore();
   const filter = FILTERS.find((f) => f.key === status) ?? FILTERS[0];
   const rows = store.campaigns

@@ -14,8 +14,8 @@ import { sunsetCandidates } from '@/lib/subscribers';
 import { fmtDateTime, fmtRelative, pct } from '@/lib/datum';
 import { LIST_B2B_OPS, LIST_B2B_PROMO, LIST_B2C } from '@/lib/seed';
 
-export default function HomePage() {
-  processDueCampaigns();
+export default async function HomePage() {
+  await processDueCampaigns();
   const store = getStore();
   const pending = store.campaigns.filter((c) => c.status === 'PENDING_APPROVAL');
   const scheduled = store.campaigns

@@ -2,8 +2,8 @@ import { getStore } from '@/lib/store';
 import { processDueCampaigns } from '@/lib/campaigns';
 
 // Sažetak u dnu leve trake — brojači po statusu (server komponenta, prosleđena kroz Shell).
-export default function SidebarSummary() {
-  processDueCampaigns();
+export default async function SidebarSummary() {
+  await processDueCampaigns();
   const store = getStore();
   const count = (s: string) => store.campaigns.filter((c) => c.status === s).length;
   const rows = [

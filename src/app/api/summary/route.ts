@@ -7,7 +7,7 @@ import { processDueCampaigns } from '@/lib/campaigns';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  processDueCampaigns();
+  await processDueCampaigns();
   const store = getStore();
   return NextResponse.json({
     listmonk: await health(),

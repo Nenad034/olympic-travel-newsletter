@@ -322,19 +322,23 @@ export function deleteCampaign(id: string): void {
 }
 
 /**
- * Scheduler za dospele zakazane kampanje — poziva se pri svakom čitanju (layout, /api/summary).
+ * Obrada dospelih zakazanih kampanja. Pokreće je `src/lib/scheduler.ts` na interval, pa ne
+ * zavisi od toga da li je neko otvorio stranicu; čitanja je i dalje zovu da prikaz odmah
+ * odgovara stanju. Vraća broj obrađenih kampanja i završava tek kad transakciona slanja
+ * budu poslata — scheduler na osnovu toga zna da tik nije još u toku.
+ *
  * TRANSAKCIONO: stvarno šalje preko `/api/tx` (Listmonk nema send_at za tx mejlove).
  * KAMPANJA u mock režimu: simulira završetak; u LIVE režimu Listmonk sam šalje, ovde se ne dira.
  */
-export function processDueCampaigns(): void {
+export async function processDueCampaigns(): Promise<number> {
   const store = getStore();
   const due = store.campaigns.filter(
     (c) => c.status === 'SCHEDULED' && c.sendAt && new Date(c.sendAt).getTime() <= Date.now(),
   );
-  if (!due.length) return;
+  if (!due.length) return 0;
   const live = listmonk.listmonkMode() === 'LIVE';
   const toFinish = due.filter((c) => c.deliveryMode === 'TRANSAKCIONO' || !live);
-  if (!toFinish.length) return;
+  if (!toFinish.length) return 0;
   // Transakciono slanje ide asinhrono ka motoru; lokalno stanje se odmah prebacuje u SENT da
   // dva paralelna čitanja ne pošalju istu kampanju dvaput.
   const pending = mutate((s) => {
@@ -346,14 +350,17 @@ export function processDueCampaigns(): void {
     }
     return out;
   });
-  for (const c of pending) {
-    void sendTransactionalNow(store, c).catch((e: unknown) => {
-      mutate((s) => {
-        const cc = requireCampaign(s, c.id);
-        log(cc, 'Greška pri transakcionom slanju', e instanceof Error ? e.message : String(e), 'Listmonk');
-      });
-    });
-  }
+  await Promise.all(
+    pending.map((c) =>
+      sendTransactionalNow(store, c).catch((e: unknown) => {
+        mutate((s) => {
+          const cc = requireCampaign(s, c.id);
+          log(cc, 'Greška pri transakcionom slanju', e instanceof Error ? e.message : String(e), 'Listmonk');
+        });
+      }),
+    ),
+  );
+  return toFinish.length;
 }
 
 function finishSend(store: Store, c: Campaign) {

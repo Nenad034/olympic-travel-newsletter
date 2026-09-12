@@ -150,7 +150,7 @@ describe('tok odobravanja', () => {
 });
 
 describe('processDueCampaigns', () => {
-  it('šalje zakazanu kampanju kojoj je termin prošao i ostavlja buduću na miru', () => {
+  it('šalje zakazanu kampanju kojoj je termin prošao i ostavlja buduću na miru', async () => {
     const [dospela, buduca] = mutate((s) => {
       const [a, b] = s.campaigns.filter((c) => c.status === 'SCHEDULED').slice(0, 2);
       a.sendAt = minutesFromNow(-5);
@@ -158,23 +158,23 @@ describe('processDueCampaigns', () => {
       return [a.id, b.id];
     });
 
-    processDueCampaigns();
+    await expect(processDueCampaigns()).resolves.toBe(1);
 
     const store = getStore();
     expect(store.campaigns.find((c) => c.id === dospela)!.status).toBe('SENT');
     expect(store.campaigns.find((c) => c.id === buduca)!.status).toBe('SCHEDULED');
   });
 
-  it('ne šalje istu kampanju dvaput', () => {
+  it('ne šalje istu kampanju dvaput', async () => {
     const id = mutate((s) => {
       const c = s.campaigns.find((x) => x.status === 'SCHEDULED')!;
       c.sendAt = minutesFromNow(-5);
       return c.id;
     });
 
-    processDueCampaigns();
+    await processDueCampaigns();
     const prviPut = getStore().campaigns.find((c) => c.id === id)!.sentAt;
-    processDueCampaigns();
+    await expect(processDueCampaigns()).resolves.toBe(0);
 
     expect(getStore().campaigns.find((c) => c.id === id)!.sentAt).toBe(prviPut);
   });

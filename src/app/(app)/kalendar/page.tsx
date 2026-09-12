@@ -21,7 +21,7 @@ function dayKey(iso: string): string {
 
 export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
   const { m } = await searchParams;
-  processDueCampaigns();
+  await processDueCampaigns();
   const store = getStore();
   const today = new Date();
   const [y0, m0] = (m ?? today.toLocaleDateString('sv-SE', { timeZone: TZ }).slice(0, 7)).split('-').map(Number);
