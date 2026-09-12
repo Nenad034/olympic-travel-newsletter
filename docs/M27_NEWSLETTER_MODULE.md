@@ -167,10 +167,24 @@ Dve situacije automatski tok ne pokriva: prenos postojeće baze subagenata iz st
 
 ## 10. Otvorena pitanja za sledeću iteraciju
 
+### 10.1 Rešeno implementacijom
+
+- **Operativni B2B tok: transakciono, ne kampanja bez unsubscribe linka** (§3.1.1). Odlučeno u korist transakcionog slanja (Listmonk `/api/tx`): taj kanal po prirodi nema unsubscribe link, pa nema ni ručnog podešavanja po šablonu ni rizika da neko operativnu poruku pošalje kao kampanju. Cena odluke je što `/api/tx` nema `send_at`, pa zakazano operativno slanje mora da izvrši aplikacija — otud scheduler iz §10.2. U kodu: `Campaign.deliveryMode`, `campaigns.sendTransactionalNow`.
+- **Prag razmaka između dve kampanje** (§6.2). Potreban je automatski, ali kao upozorenje, ne kao zabrana — marketing tim ima kontekst koji aplikacija nema. Prag je podesiv (`Settings.minGapMinutes`, podrazumevano 60 min, uz `bigCampaignThreshold` za „veliku" kampanju) i prikazuje se na kalendaru i pri odobravanju. U kodu: `campaigns.scheduleConflicts`.
+- **API kontrakti portal/booking → Listmonk** (REST payload šema). Kontrakt ne ide direktno ka Listmonk-u nego ka ovom modulu, koji je jedino mesto koje zna Listmonk API (`src/lib/listmonk.ts`) — time izvorni sistemi ne moraju da znaju ništa o motoru, pravilima pristanka ni double opt-in-u. Rute i šeme: `POST /api/webhooks/portal` (`email`, `name`, `company`, `portalAccountId`), `POST /api/webhooks/booking` (`email`, `name`, `bookingRef`, `consent`; bez `consent: true` nema prijave), `POST /api/webhooks/ses` (bounce/complaint/delivery). Autentikacija je zajednička tajna u zaglavlju `x-webhook-secret` (`WEBHOOK_SECRET`).
+- **Ručni unos podataka** (§7.1). Prvobitna zabrana svakog unosa van portala/bookinga pokazala se kao rupa za prenos postojeće baze; dozvoljeni su ručni unos i CSV uvoz uz obavezan osnov pristanka, datum i referencu na dokaz.
+
+### 10.2 Odlučeno u toku rada, van prvobitnog spiska
+
+- **Zakazano slanje ne sme da zavisi od otvaranja stranice.** Obrada dospelih kampanja ide iz `src/instrumentation.ts` na interval (60 s, `SCHEDULER_INTERVAL_MS`), sa zaštitom od preklapanja tikova. Bez toga operativni tok — koji nema Listmonk `send_at` — ne bi otišao dok neko ne otvori panel.
+- **Dnevnik izmena pretplatnika.** Ko, kad, koje polje i stara → nova vrednost, po uzoru na istoriju kampanja; obavezno za pristanak, odjavu, vraćanje na listu, pauziranje i brisanje.
+- **Brisanje ostavlja suppression zapis.** Hash adrese, datum i razlog — bez toga bi obrisana adresa vratila se prvim uvozom stare baze. Ručni unos i CSV uvoz je odbijaju; povratak ide samo kroz portal ili booking, uz novu saglasnost.
+
+### 10.3 I dalje otvoreno
+
 - Tačan naziv/struktura poddomena za SES identitete.
 - Da li B2B promotivni opt-out ide odmah pri kreiranju naloga ili nakon prvog slanja (pravna provera preporučena, van obima ovog dokumenta).
-- Format API kontrata između portala/booking sistema i Listmonk-a (REST payload šema).
 - Da li custom UI sloj ide kao zaseban modul ili deo postojećeg content/marketing agent interfejsa.
 - Retencija test/staging liste i ko su interni test primaoci.
-- Da li je potreban prag/pravilo za automatsko upozorenje kad se dve velike kampanje zakažu preblizu jedna drugoj (sekcija 6.2), ili je dovoljna ručna provera od strane marketing tima.
-- Potvrditi konačnu odluku: operativni B2B tok kao transakcioni send vs. kampanja bez unsubscribe linka (sekcija 3.1.1).
+- Rok čuvanja suppression zapisa — hash nije ličan podatak u istom smislu, ali lista ne treba da raste zauvek.
+- Ponašanje schedulera kad aplikacija radi u više instanci: tajmer je po instanci, pa bi dve instance obradile istu kampanju; traži zaključavanje na nivou store-a ili jednu određenu instancu.
