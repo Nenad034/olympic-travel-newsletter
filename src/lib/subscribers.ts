@@ -1,4 +1,5 @@
 import 'server-only';
+import { createHash } from 'node:crypto';
 import { getStore, mutate, newId, now } from './store';
 import * as listmonk from './listmonk';
 import { CURRENT_USER, listIdNumber } from './campaigns';
@@ -12,6 +13,18 @@ export const ACTOR_BOOKING = 'booking sistem';
 function logSub(sub: Subscriber, actor: string, action: string, extra: Partial<SubscriberEvent> = {}) {
   sub.history ??= [];
   sub.history.push({ ...extra, at: now(), actor, action });
+}
+
+/** Suppression lista pamti hash, ne adresu — cilj je prepoznati ponovni unos, ne zadržati
+ * podatak čije je brisanje zatraženo. */
+export function emailHash(email: string): string {
+  return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
+}
+
+/** Vraća zapis o brisanju ako je adresa na suppression listi. */
+export function suppressionFor(email: string, store: Store = getStore()) {
+  const h = emailHash(email);
+  return store.suppressions?.find((s) => s.emailHash === h) ?? null;
 }
 
 /** Adresa u dnevniku koji nadživljava brisanje sme da ostane samo maskirana. */
@@ -173,17 +186,26 @@ export function unsubscribeFromList(id: string, listId: string): Subscriber {
 
 /** Pravo na brisanje na zahtev (ZZPL, spec §3.2) — potpuno uklanjanje zapisa. Zapis nestaje,
  * ali trag o samom brisanju ostaje u `subscriberAudit`, sa maskiranom adresom. */
-export function deleteSubscriber(id: string): void {
+export function deleteSubscriber(id: string, reason = 'zahtev kontakta'): void {
   mutate((store) => {
     const sub = store.subscribers.find((s) => s.id === id);
     if (!sub) throw new Error('Pretplatnik ne postoji');
+    const h = emailHash(sub.email);
+    if (!store.suppressions.some((s) => s.emailHash === h)) {
+      store.suppressions.unshift({
+        emailHash: h,
+        at: now(),
+        reason: reason.trim() || 'zahtev kontakta',
+        actor: CURRENT_USER,
+      });
+    }
     store.subscriberAudit.unshift({
       at: now(),
       actor: CURRENT_USER,
       action: 'Obrisan na zahtev (pravo na brisanje)',
       subscriberId: sub.id,
       emailMasked: maskEmail(sub.email),
-      note: `izvor ${sub.source} · dnevnik od ${sub.history?.length ?? 0} zapisa uklonjen sa zapisom`,
+      note: `razlog: ${reason} · izvor ${sub.source} · dnevnik od ${sub.history?.length ?? 0} zapisa uklonjen sa zapisom`,
     });
     store.subscribers = store.subscribers.filter((s) => s.id !== id);
   });
@@ -275,6 +297,13 @@ export async function addSubscriberManual(
   const company = input.company?.trim() ?? '';
 
   if (!EMAIL_RE.test(email)) throw new Error(`Neispravna adresa: ${input.email.trim() || '(prazno)'}`);
+  // Adresa obrisana na zahtev se ne vraća ručnim unosom — povratak ide kroz izvorni sistem,
+  // gde kontakt sam daje novu saglasnost (portal nalog ili booking sa čekboksom).
+  const suppressed = suppressionFor(email, store);
+  if (suppressed)
+    throw new Error(
+      `Adresa je obrisana na zahtev ${new Date(suppressed.at).toLocaleDateString('sr-RS')} (${suppressed.reason}) — povratak samo kroz portal ili booking, uz novu saglasnost`,
+    );
   if (!name) throw new Error('Ime je obavezno');
   if (!consentNote) throw new Error('Osnov pristanka je obavezan — bez njega zapis nema pravni trag');
   if (!sourceRef) throw new Error('Referenca na dokaz pristanka je obavezna');

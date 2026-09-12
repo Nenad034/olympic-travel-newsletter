@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   addSubscriberManual,
+  deleteSubscriber,
+  emailHash,
   importSubscribersCsv,
+  subscribeFromBooking,
   unsubscribeFromList,
   updateSubscriber,
 } from '@/lib/subscribers';
@@ -205,5 +208,76 @@ describe('updateSubscriber — tri zaštite', () => {
     await expect(updateSubscriber(prvi.id, { email: 'drugi@agencija.rs' })).rejects.toThrow(
       /već postoji/,
     );
+  });
+});
+
+describe('pravo na brisanje i suppression lista', () => {
+  async function unesi(email: string) {
+    const { subscriber } = await addSubscriberManual({
+      email,
+      name: 'Za Brisanje',
+      listIds: [LIST_B2B_OPS],
+      consentNote: 'ugovor',
+      consentAt: '2026-01-05',
+      sourceRef: 'UG-20',
+      addedBy: TIM,
+    });
+    return subscriber;
+  }
+
+  it('brisanje uklanja zapis, a ostavlja hash adrese sa datumom i razlogom', async () => {
+    const sub = await unesi('brise.se@agencija.rs');
+
+    deleteSubscriber(sub.id, 'zahtev kontakta mejlom');
+
+    const store = getStore();
+    expect(store.subscribers.some((s) => s.id === sub.id)).toBe(false);
+    expect(store.suppressions).toHaveLength(1);
+    expect(store.suppressions[0]).toMatchObject({
+      emailHash: emailHash('brise.se@agencija.rs'),
+      reason: 'zahtev kontakta mejlom',
+    });
+    // Adresa ne sme da ostane ni u suppression zapisu ni u dnevniku.
+    expect(JSON.stringify(store.suppressions)).not.toContain('brise.se@agencija.rs');
+    expect(store.subscriberAudit[0].emailMasked).not.toContain('brise.se');
+  });
+
+  it('ručni unos odbija adresu sa suppression liste', async () => {
+    const sub = await unesi('nepozeljna@agencija.rs');
+    deleteSubscriber(sub.id);
+
+    await expect(unesi('nepozeljna@agencija.rs')).rejects.toThrow(/obrisana na zahtev/);
+  });
+
+  it('CSV uvoz odbija takav red i navodi broj reda, ostatak fajla prolazi', async () => {
+    const sub = await unesi('obrisana@agencija.rs');
+    deleteSubscriber(sub.id);
+
+    const csv = [
+      'email,ime,liste,pristanak,osnov,referenca',
+      'obrisana@agencija.rs,Obrisana,b2b-operativna,2026-02-14,ugovor,UG-21',
+      'uredna@agencija.rs,Uredna,b2b-operativna,2026-02-14,ugovor,UG-22',
+    ].join('\n');
+    const r = await importSubscribersCsv(csv, { addedBy: TIM });
+
+    expect(r.created).toBe(1);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0].line).toBe(2);
+    expect(r.errors[0].message).toMatch(/obrisana na zahtev/);
+  });
+
+  it('povratak kroz booking ostaje moguć — suppression ne blokira izvorni sistem', async () => {
+    const sub = await unesi('vraca.se@gmail.com');
+    deleteSubscriber(sub.id);
+
+    const vracen = await subscribeFromBooking({
+      email: 'vraca.se@gmail.com',
+      name: 'Vraca Se',
+      bookingRef: 'BK-999',
+      consent: true,
+    });
+
+    expect(vracen?.status).toBe('UNCONFIRMED');
+    expect(getStore().subscribers.some((s) => s.email === 'vraca.se@gmail.com')).toBe(true);
   });
 });

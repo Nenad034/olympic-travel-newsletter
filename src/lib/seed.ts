@@ -521,6 +521,7 @@ export function buildSeed(): Store {
     lists,
     subscribers,
     subscriberAudit: [],
+    suppressions: [],
     templates: SEED_TEMPLATES,
     campaigns,
     settings,

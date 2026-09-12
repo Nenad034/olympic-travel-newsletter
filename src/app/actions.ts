@@ -102,8 +102,8 @@ export const unsubscribeAction = wrap(async (id: string, listId: string) => {
   revalidatePath('/liste');
 });
 
-export const deleteSubscriberAction = wrap(async (id: string) => {
-  subs.deleteSubscriber(id);
+export const deleteSubscriberAction = wrap(async (id: string, reason?: string) => {
+  subs.deleteSubscriber(id, reason);
   revalidatePath('/pretplatnici');
   revalidatePath('/liste');
 });

@@ -32,6 +32,7 @@ export function getStore(): Store {
 /** Store zapisan pre uvođenja dnevnika nema ta polja — dopunjavamo ih umesto da rušimo čitanje. */
 function normalize(store: Store): Store {
   store.subscriberAudit ??= [];
+  store.suppressions ??= [];
   for (const s of store.subscribers) s.history ??= [];
   return store;
 }

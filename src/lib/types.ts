@@ -198,6 +198,15 @@ export interface Settings {
   cubeSyncEnabled: boolean;
 }
 
+/** Trag da je adresa obrisana na zahtev (spec §3.2). Čuva se hash, ne adresa — svrha je da
+ * se prepozna ponovni unos iste adrese, ne da se zadrži podatak koji je zatražen da nestane. */
+export interface Suppression {
+  emailHash: string;
+  at: string;
+  reason: string;
+  actor: string;
+}
+
 export interface DeliveryEvent {
   id: string;
   at: string;
@@ -213,6 +222,8 @@ export interface Store {
   subscribers: Subscriber[];
   /** Dnevnik događaja koji nadživljavaju zapis (brisanje na zahtev). */
   subscriberAudit: SubscriberAuditEntry[];
+  /** Adrese obrisane na zahtev — ručni unos i CSV uvoz ih odbijaju. */
+  suppressions: Suppression[];
   templates: Template[];
   campaigns: Campaign[];
   settings: Settings;

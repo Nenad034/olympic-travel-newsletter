@@ -167,7 +167,7 @@ export default function SubscribersTable({
                           <Icon name={s.status === 'PAUSED' ? 'debug-start' : 'debug-pause'} className="!text-[12px]" />
                         </Button>
                       )}
-                      <Button size="sm" variant="ghost" className="text-danger" disabled={pending} title="Obriši na zahtev (pravo na brisanje)" onClick={() => { if (confirm(`Trajno obrisati ${s.email}? (pravo na brisanje na zahtev)`)) run(() => deleteSubscriberAction(s.id), 'Zapis obrisan.'); }}>
+                      <Button size="sm" variant="ghost" className="text-danger" disabled={pending} title="Obriši na zahtev (pravo na brisanje)" onClick={() => { if (confirm(`Trajno obrisati ${s.email}?\n\nZapis i njegov dnevnik nestaju. Ostaje samo hash adrese na listi obrisanih, da ručni unos i CSV uvoz ne vrate adresu nazad.`)) run(() => deleteSubscriberAction(s.id, 'zahtev kontakta'), 'Zapis obrisan, adresa upisana na listu obrisanih.'); }}>
                         <Icon name="trash" className="!text-[12px]" />
                       </Button>
                     </div>
