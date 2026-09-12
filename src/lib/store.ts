@@ -8,7 +8,8 @@ import { buildSeed } from './seed';
 // (vidi `listmonk.ts`). Jedan JSON fajl, sinhrono čitanje/pisanje — dovoljno za interni
 // alat sa nekoliko korisnika; nema konkurentnih pisanja izvan jednog Node procesa.
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+// Testovi pokazuju DATA_DIR na privremeni direktorijum da ne diraju razvojni store.json.
+const DATA_DIR = process.env.NEWSLETTER_DATA_DIR ?? path.join(process.cwd(), 'data');
 const STORE_PATH = path.join(DATA_DIR, 'store.json');
 
 let cache: Store | null = null;
