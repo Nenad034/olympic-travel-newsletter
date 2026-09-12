@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { askAgent, looksLikeActionRequest } from '@/lib/agent';
 import { addSubscriberManual } from '@/lib/subscribers';
 import { LIST_B2B_OPS } from '@/lib/seed';
+import { NAV_ITEMS } from '@/lib/nav';
 import { getStore, resetStore } from '@/lib/store';
 
 // Testovi rade u mock režimu (bez ANTHROPIC_API_KEY) — proveravaju granicu agenta i alate,
@@ -85,5 +86,38 @@ describe('askAgent', () => {
     expect(log[0]).toMatchObject({ actionCode: 'agent.upit', generatedBy: 'LOKALNO' });
     expect(log[0].tools.length).toBeGreaterThan(0);
     expect(JSON.stringify(log[0])).not.toContain('stanje baze?');
+  });
+});
+
+describe('linkovi i priložen kontekst', () => {
+  it('predlaže isključivo ekrane iz registra navigacije', async () => {
+    const upiti = [
+      'kakvo je stanje baze?',
+      'ima li sudara termina?',
+      'kakvo je stanje isporuke po domenima?',
+      'pošalji kampanju odmah',
+    ];
+
+    for (const q of upiti) {
+      const r = await askAgent({ query: q });
+      for (const s of r.suggestions) {
+        expect(NAV_ITEMS.some((i) => i.href === s.href && i.label === s.label)).toBe(true);
+      }
+    }
+  });
+
+  it('prima referencu, dokument i sliku kao kontekst bez padanja', async () => {
+    const r = await askAgent({
+      query: 'kakvo je stanje baze?',
+      pageContent: 'Pretplatnici — 31 zapisa',
+      contextItems: [
+        { type: 'RECORD', refLabel: 'Bojan Ristić <rezervacije@siriustours.rs>' },
+        { type: 'FILE', label: 'brif.txt', content: 'Rana rezervacija leto 2027.' },
+        { type: 'IMAGE', label: 'ekran.png', imageData: 'AAAA', imageMediaType: 'image/png' },
+      ],
+    });
+
+    expect(r.answer).toBeTruthy();
+    expect(r.generatedBy).toBe('LOKALNO');
   });
 });

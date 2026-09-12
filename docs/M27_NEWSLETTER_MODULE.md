@@ -177,6 +177,15 @@ Agent u panelu odgovara na pitanja o stanju baze, kampanja i isporuke. Obrazac j
 - **Dnevnik poziva** (`Store.agentInvocations`): vreme, model, tokeni, trajanje, iteracije i pozvani alati — **bez teksta upita**; dnevnik služi za uvid u potrošnju, ne za čitanje razgovora.
 - **Bez API ključa** modul radi u mock režimu, pa agent sklapa odgovor lokalno iz istih alata i to jasno kaže — ne pretvara se da je model.
 
+### 9a.1 Polje za razgovor
+
+Polje postoji **tačno jedno** u aplikaciji. `Shell.tsx` ga montira jednom i fizički premešta njegov čvor između dva slota — desnog panela i dna centralnog panela — umesto da ga renderuje na dva mesta ili menja odredište portala; oba bi značila odmontiranje i gubitak istorije razgovora i nedovršenog teksta. Strelica u zaglavlju seli polje u oba smera, izbor se pamti u `localStorage`, a visina donjeg doka se menja prevlačenjem i takođe pamti.
+
+- **Glas**: `Web Speech API` u pregledaču — transkript prolazi kroz isti `send()` tok kao kucanje, zvuk se ne šalje na server niti čuva. Dugme se ne prikazuje u pregledačima bez podrške (nema polovičnog stanja).
+- **Prilog preko „+"**: slike (jpg/png/gif/webp do 5 MB) idu u base64 direktno u pregledaču i ulaze u poziv kao Claude Vision blokovi; dokumenti (txt/md/csv/json, html, pdf, docx, xlsx) idu na `POST /api/ai-context/extract-file`, koji izvlači tekst u memoriji i odbacuje fajl — ništa se ne piše na disk ni u store. Slika se može i nalepiti (Ctrl+V).
+- **Automatski kontekst**: naziv otvorenog taba i vidljiv tekst centralnog panela (`#ot-main-content`) prilažu se uz svako pitanje; „X" na čipu ukida oboje za taj tab.
+- **Linkovi u odgovoru** dolaze iz `/api/nav-items` registra — istog koji pune levi meni i paleta komandi.
+
 ---
 
 ## 10. Otvorena pitanja za sledeću iteraciju
