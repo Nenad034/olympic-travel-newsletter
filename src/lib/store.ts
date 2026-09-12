@@ -17,7 +17,7 @@ export function getStore(): Store {
   if (cache) return cache;
   try {
     if (fs.existsSync(STORE_PATH)) {
-      cache = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as Store;
+      cache = normalize(JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as Store);
       return cache;
     }
   } catch {
@@ -26,6 +26,13 @@ export function getStore(): Store {
   cache = buildSeed();
   persist();
   return cache;
+}
+
+/** Store zapisan pre uvođenja dnevnika nema ta polja — dopunjavamo ih umesto da rušimo čitanje. */
+function normalize(store: Store): Store {
+  store.subscriberAudit ??= [];
+  for (const s of store.subscribers) s.history ??= [];
+  return store;
 }
 
 function persist() {

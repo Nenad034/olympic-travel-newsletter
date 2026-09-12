@@ -1,9 +1,26 @@
 import 'server-only';
 import { getStore, mutate, newId, now } from './store';
 import * as listmonk from './listmonk';
-import { listIdNumber } from './campaigns';
+import { CURRENT_USER, listIdNumber } from './campaigns';
 import { LIST_B2B_OPS, LIST_B2B_PROMO, LIST_B2C } from './seed';
-import type { Store, Subscriber } from './types';
+import type { Store, Subscriber, SubscriberEvent } from './types';
+
+export const ACTOR_PORTAL = 'B2B portal';
+export const ACTOR_BOOKING = 'booking sistem';
+
+/** Dnevnik pretplatnika — isti obrazac kao `log()` za kampanje u `campaigns.ts`. */
+function logSub(sub: Subscriber, actor: string, action: string, extra: Partial<SubscriberEvent> = {}) {
+  sub.history ??= [];
+  sub.history.push({ ...extra, at: now(), actor, action });
+}
+
+/** Adresa u dnevniku koji nadživljava brisanje sme da ostane samo maskirana. */
+export function maskEmail(email: string): string {
+  const [user = '', domain = ''] = email.split('@');
+  const head = user.slice(0, 1);
+  const tail = user.length > 2 ? user.slice(-1) : '';
+  return `${head}${'*'.repeat(Math.max(1, user.length - 2))}${tail}@${domain}`;
+}
 
 // Spec §7 — auto-subscribe: subscribe se okida iz izvornog sistema (B2B portal ili booking)
 // preko webhook ruta u src/app/api/webhooks/*. Ručni unos i CSV uvoz su dodati kao izuzetak
@@ -34,8 +51,22 @@ export async function subscribeFromPortal(input: {
         !existing.unsubscribedFrom.includes(LIST_B2B_PROMO)
       )
         existing.listIds.push(LIST_B2B_PROMO);
-      existing.company = input.company;
-      existing.status = 'ENABLED';
+      if (existing.company !== input.company) {
+        logSub(existing, ACTOR_PORTAL, 'Podatak ažuriran sa portala', {
+          field: 'firma',
+          from: existing.company,
+          to: input.company,
+        });
+        existing.company = input.company;
+      }
+      if (existing.status !== 'ENABLED') {
+        logSub(existing, ACTOR_PORTAL, 'Ponovna sinhronizacija sa portalom', {
+          field: 'status',
+          from: existing.status,
+          to: 'ENABLED',
+        });
+        existing.status = 'ENABLED';
+      }
       return existing;
     }
     const sub: Subscriber = {
@@ -51,7 +82,9 @@ export async function subscribeFromPortal(input: {
       lastOpenAt: null,
       createdAt: now(),
       unsubscribedFrom: [],
+      history: [],
     };
+    logSub(sub, ACTOR_PORTAL, 'Prijava — kreiran portal nalog', { note: input.portalAccountId });
     store.subscribers.unshift(sub);
     return sub;
   });
@@ -76,7 +109,14 @@ export async function subscribeFromBooking(input: {
   return mutate((store) => {
     const existing = store.subscribers.find((s) => s.email === email);
     if (existing) {
-      if (!existing.listIds.includes(LIST_B2C)) existing.listIds.push(LIST_B2C);
+      if (!existing.listIds.includes(LIST_B2C)) {
+        existing.listIds.push(LIST_B2C);
+        logSub(existing, ACTOR_BOOKING, 'Dodat na listu', {
+          field: 'liste',
+          to: LIST_B2C,
+          note: input.bookingRef,
+        });
+      }
       return existing;
     }
     const sub: Subscriber = {
@@ -91,7 +131,9 @@ export async function subscribeFromBooking(input: {
       lastOpenAt: null,
       createdAt: now(),
       unsubscribedFrom: [],
+      history: [],
     };
+    logSub(sub, ACTOR_BOOKING, 'Prijava uz označen pristanak', { note: input.bookingRef });
     store.subscribers.unshift(sub);
     return sub;
   });
@@ -102,7 +144,14 @@ export function confirmDoubleOptin(id: string): Subscriber {
   return mutate((store) => {
     const s = store.subscribers.find((x) => x.id === id);
     if (!s) throw new Error('Pretplatnik ne postoji');
-    if (s.status === 'UNCONFIRMED') s.status = 'ENABLED';
+    if (s.status === 'UNCONFIRMED') {
+      logSub(s, 'pretplatnik', 'Pristanak potvrđen (double opt-in)', {
+        field: 'status',
+        from: 'UNCONFIRMED',
+        to: 'ENABLED',
+      });
+      s.status = 'ENABLED';
+    }
     return s;
   });
 }
@@ -117,13 +166,25 @@ export function unsubscribeFromList(id: string, listId: string): Subscriber {
     if (!list.unsubscribeAllowed) throw new Error('Operativni tok ne podržava odjavu');
     s.listIds = s.listIds.filter((l) => l !== listId);
     if (!s.unsubscribedFrom.includes(listId)) s.unsubscribedFrom.push(listId);
+    logSub(s, 'pretplatnik', 'Odjava sa liste', { field: 'liste', from: listId, note: list.name });
     return s;
   });
 }
 
-/** Pravo na brisanje na zahtev (ZZPL, spec §3.2) — potpuno uklanjanje zapisa. */
+/** Pravo na brisanje na zahtev (ZZPL, spec §3.2) — potpuno uklanjanje zapisa. Zapis nestaje,
+ * ali trag o samom brisanju ostaje u `subscriberAudit`, sa maskiranom adresom. */
 export function deleteSubscriber(id: string): void {
   mutate((store) => {
+    const sub = store.subscribers.find((s) => s.id === id);
+    if (!sub) throw new Error('Pretplatnik ne postoji');
+    store.subscriberAudit.unshift({
+      at: now(),
+      actor: CURRENT_USER,
+      action: 'Obrisan na zahtev (pravo na brisanje)',
+      subscriberId: sub.id,
+      emailMasked: maskEmail(sub.email),
+      note: `izvor ${sub.source} · dnevnik od ${sub.history?.length ?? 0} zapisa uklonjen sa zapisom`,
+    });
     store.subscribers = store.subscribers.filter((s) => s.id !== id);
   });
 }
@@ -132,7 +193,15 @@ export function pauseSubscriber(id: string, paused: boolean): Subscriber {
   return mutate((store) => {
     const s = store.subscribers.find((x) => x.id === id);
     if (!s) throw new Error('Pretplatnik ne postoji');
-    s.status = paused ? 'PAUSED' : 'ENABLED';
+    const to = paused ? 'PAUSED' : 'ENABLED';
+    if (s.status !== to) {
+      logSub(s, CURRENT_USER, paused ? 'Slanje pauzirano (sunset)' : 'Slanje nastavljeno', {
+        field: 'status',
+        from: s.status,
+        to,
+      });
+      s.status = to;
+    }
     return s;
   });
 }
@@ -247,10 +316,19 @@ export async function addSubscriberManual(
     if (existing) {
       // Ranija odjava preživljava uvoz — vraćanje odjavljenog na listu je kršenje opt-outa.
       for (const id of listIds) {
-        if (!existing.listIds.includes(id) && !existing.unsubscribedFrom.includes(id))
+        if (!existing.listIds.includes(id) && !existing.unsubscribedFrom.includes(id)) {
           existing.listIds.push(id);
+          logSub(existing, input.addedBy, 'Dodat na listu', { field: 'liste', to: id });
+        }
       }
-      if (company) existing.company = company;
+      if (company && existing.company !== company) {
+        logSub(existing, input.addedBy, 'Podatak izmenjen', {
+          field: 'firma',
+          from: existing.company,
+          to: company,
+        });
+        existing.company = company;
+      }
       return { subscriber: existing, created: false };
     }
     const sub: Subscriber = {
@@ -268,7 +346,16 @@ export async function addSubscriberManual(
       lastOpenAt: null,
       createdAt: now(),
       unsubscribedFrom: [],
+      history: [],
     };
+    logSub(sub, input.addedBy, input.source === 'IMPORT_CSV' ? 'Uvezen iz CSV-a' : 'Ručni unos', {
+      note: `${consentNote} · ${sourceRef}`,
+    });
+    if (needsDoubleOptin)
+      logSub(sub, 'sistem', 'Poslata potvrda prijave (double opt-in)', {
+        field: 'status',
+        to: 'UNCONFIRMED',
+      });
     s.subscribers.unshift(sub);
     return { subscriber: sub, created: true };
   });
@@ -399,6 +486,8 @@ export interface SubscriberPatch {
   sourceRef?: string;
   /** Potvrda da se kontakt svesno vraća na listu sa koje se ranije odjavio. */
   allowResubscribe?: boolean;
+  /** Ko upisuje izmenu — podrazumevano prijavljeni korisnik panela. */
+  actor?: string;
 }
 
 /** Ispravka postojećeg zapisa. Trag pristanka za zapise iz portala/bookinga se ne dira —
@@ -468,9 +557,35 @@ export async function updateSubscriber(id: string, patch: SubscriberPatch): Prom
     attribs: { company, source: current.source.toLowerCase(), source_ref: sourceRef },
   });
 
+  const actor = patch.actor ?? CURRENT_USER;
   return mutate((s) => {
     const sub = s.subscribers.find((x) => x.id === id);
     if (!sub) throw new Error('Pretplatnik ne postoji');
+    const listName = (lid: string) => s.lists.find((l) => l.id === lid)?.name ?? lid;
+
+    const scalars: [string, string, string][] = [
+      ['email', sub.email, email],
+      ['ime', sub.name, name],
+      ['firma', sub.company ?? '', company],
+      ['datum pristanka', sub.consentAt, consentAt],
+      ['osnov pristanka', sub.consentNote ?? '', consentNote ?? ''],
+      ['referenca', sub.sourceRef, sourceRef],
+    ];
+    for (const [field, from, to] of scalars) {
+      if (from !== to) logSub(sub, actor, 'Podatak izmenjen', { field, from, to });
+    }
+    for (const lid of listIds.filter((x) => !sub.listIds.includes(x))) {
+      logSub(
+        sub,
+        actor,
+        sub.unsubscribedFrom.includes(lid) ? 'Vraćen na listu (izričita potvrda)' : 'Dodat na listu',
+        { field: 'liste', to: lid, note: listName(lid) },
+      );
+    }
+    for (const lid of sub.listIds.filter((x) => !listIds.includes(x))) {
+      logSub(sub, actor, 'Uklonjen sa liste', { field: 'liste', from: lid, note: listName(lid) });
+    }
+
     sub.email = email;
     sub.name = name;
     sub.company = company || undefined;
@@ -479,7 +594,14 @@ export async function updateSubscriber(id: string, patch: SubscriberPatch): Prom
     sub.consentAt = consentAt;
     sub.consentNote = consentNote;
     sub.sourceRef = sourceRef;
-    if (newDoubleOptin && sub.status === 'ENABLED') sub.status = 'UNCONFIRMED';
+    if (newDoubleOptin && sub.status === 'ENABLED') {
+      logSub(sub, 'sistem', 'Nova lista traži double opt-in', {
+        field: 'status',
+        from: 'ENABLED',
+        to: 'UNCONFIRMED',
+      });
+      sub.status = 'UNCONFIRMED';
+    }
     return sub;
   });
 }

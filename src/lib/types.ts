@@ -34,6 +34,25 @@ export interface MailingList {
 
 export type SubscriberStatus = 'ENABLED' | 'UNCONFIRMED' | 'PAUSED' | 'BLOCKLISTED';
 
+/** Jedan zapis u dnevniku pretplatnika — isti obrazac kao `CampaignEvent` za kampanje.
+ * `field`/`from`/`to` se popunjavaju kad je događaj izmena vrednosti. */
+export interface SubscriberEvent {
+  at: string;
+  actor: string;
+  action: string;
+  field?: string;
+  from?: string;
+  to?: string;
+  note?: string;
+}
+
+/** Dnevnik brisanja živi izvan zapisa jer zapis više ne postoji. Adresa je maskirana —
+ * pravo na brisanje ne sme da ostavi ličan podatak u dnevniku (spec §3.2). */
+export interface SubscriberAuditEntry extends SubscriberEvent {
+  subscriberId: string;
+  emailMasked: string;
+}
+
 export interface Subscriber {
   id: string;
   email: string;
@@ -56,6 +75,8 @@ export interface Subscriber {
   createdAt: string;
   /** Datum odjave sa promotivnog toka (B2B) — ne utiče na operativni tok. */
   unsubscribedFrom: string[];
+  /** Dnevnik izmena: ko, kad, koje polje, stara → nova vrednost. */
+  history: SubscriberEvent[];
 }
 
 export interface Placeholder {
@@ -190,6 +211,8 @@ export interface DeliveryEvent {
 export interface Store {
   lists: MailingList[];
   subscribers: Subscriber[];
+  /** Dnevnik događaja koji nadživljavaju zapis (brisanje na zahtev). */
+  subscriberAudit: SubscriberAuditEntry[];
   templates: Template[];
   campaigns: Campaign[];
   settings: Settings;

@@ -8,7 +8,7 @@ import { SegmentBadge, SubscriberStatusBadge } from './Badges';
 import { Badge } from './ui/badge';
 import { useInspector, type SubscriberInspect } from './InspectorContext';
 import { fmtDate, fmtDateTime, fmtRelative } from '@/lib/datum';
-import type { DeliveryEvent, Subscriber } from '@/lib/types';
+import type { DeliveryEvent, Subscriber, SubscriberEvent } from '@/lib/types';
 
 interface HelpBlock {
   match: (p: string) => boolean;
@@ -139,6 +139,26 @@ const EVENT_LABEL: Record<DeliveryEvent['type'], string> = {
   DELIVERY: 'isporučeno',
 };
 
+/** Jedan red dnevnika: ko i kad, šta, i stara → nova vrednost kad je izmena vrednosti. */
+function LogEntry({ e }: { e: SubscriberEvent }) {
+  const changed = e.field && (e.from !== undefined || e.to !== undefined);
+  return (
+    <li className="flex flex-col border-l-2 border-border pl-2">
+      <span className="text-ink-dim">{e.action}</span>
+      <span className="text-[11px] text-ink-faint">
+        {fmtDateTime(e.at)} · {e.actor}
+      </span>
+      {changed && (
+        <span className="mt-0.5 font-mono text-[11px] text-ink-faint">
+          {e.field}: <span className="line-through">{e.from || '—'}</span> →{' '}
+          <span className="text-ink-dim">{e.to || '—'}</span>
+        </span>
+      )}
+      {e.note && <span className="text-[11px] text-ink-faint">{e.note}</span>}
+    </li>
+  );
+}
+
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex gap-2 py-1">
@@ -149,9 +169,14 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 /** Brze info o selektovanom pretplatniku — sve što tabela ne staje da prikaže. */
+const LOG_PREVIEW = 4;
+
 function SubscriberQuickInfo({ target }: { target: SubscriberInspect }) {
   const { subscriber: s, lists, events } = target;
   const [editing, setEditing] = useState(false);
+  const [showAllLog, setShowAllLog] = useState(false);
+  // Najnovije prvo — dnevnik se čita odozgo, kao istorija kampanje.
+  const log = [...(s.history ?? [])].reverse();
   const member = lists.filter((l) => s.listIds.includes(l.id));
   const left = lists.filter((l) => s.unsubscribedFrom.includes(l.id));
   const manual = s.source === 'RUCNI_UNOS' || s.source === 'IMPORT_CSV';
@@ -236,6 +261,31 @@ function SubscriberQuickInfo({ target }: { target: SubscriberInspect }) {
           </Row>
           <Row label="Događaji">{events.length ? `${events.length} zapisa` : 'nema'}</Row>
         </div>
+      </div>
+
+      <div className="mx-2 mt-2 rounded-lg border border-border bg-panel">
+        <div className="section-head rounded-t-lg">
+          <Icon name="history" /> Dnevnik izmena
+        </div>
+        {log.length === 0 ? (
+          <p className="p-3 text-ink-faint">Nema zabeleženih izmena.</p>
+        ) : (
+          <>
+            <ul className="flex flex-col gap-2.5 p-3">
+              {log.slice(0, showAllLog ? undefined : LOG_PREVIEW).map((e, i) => (
+                <LogEntry key={`${e.at}-${i}`} e={e} />
+              ))}
+            </ul>
+            {log.length > LOG_PREVIEW && (
+              <button
+                onClick={() => setShowAllLog((v) => !v)}
+                className="w-full border-t border-border px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-faint hover:bg-sunken hover:text-ink"
+              >
+                {showAllLog ? 'prikaži manje' : `prikaži sve (${log.length})`}
+              </button>
+            )}
+          </>
+        )}
       </div>
 
       {problems.length > 0 && (

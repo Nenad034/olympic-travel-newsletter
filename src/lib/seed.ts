@@ -1,4 +1,12 @@
-import type { Campaign, DeliveryEvent, MailingList, Settings, Store, Subscriber } from './types';
+import type {
+  Campaign,
+  DeliveryEvent,
+  MailingList,
+  Settings,
+  Store,
+  Subscriber,
+  SubscriberEvent,
+} from './types';
 import { SEED_TEMPLATES } from './email-templates';
 
 // Početno seme (mock Listmonk motora). Datumi su fiksni da build i prvi prikaz budu
@@ -91,6 +99,11 @@ function daysAhead(n: number, hour = 9, minute = 0): string {
   return d.toISOString();
 }
 
+/** Zasejani zapisi dobijaju jedan početni događaj — dnevnik ne sme da počne prazan. */
+function signupHistory(at: string, actor: string, action: string): SubscriberEvent[] {
+  return [{ at, actor, action }];
+}
+
 const subscribers: Subscriber[] = [
   ...AGENCIES.map(([company, email, name], i): Subscriber => {
     const optedOutPromo = i === 3 || i === 9;
@@ -108,6 +121,19 @@ const subscribers: Subscriber[] = [
       lastOpenAt: stale ? daysAgo(214) : daysAgo(3 + (i % 11)),
       createdAt: daysAgo(200 - i * 9),
       unsubscribedFrom: optedOutPromo ? [LIST_B2B_PROMO] : [],
+      history: [
+        ...signupHistory(daysAgo(200 - i * 9), 'B2B portal', 'Prijava — kreiran portal nalog'),
+        ...(optedOutPromo
+          ? [
+              {
+                at: daysAgo(40 + i),
+                actor: 'pretplatnik',
+                action: 'Odjava sa liste',
+                note: 'B2B subagenti — promotivna',
+              },
+            ]
+          : []),
+      ],
     };
   }),
   ...TRAVELLERS.map(([email, name], i): Subscriber => {
@@ -126,6 +152,33 @@ const subscribers: Subscriber[] = [
       lastOpenAt: unconfirmed ? null : stale ? daysAgo(230) : daysAgo(2 + (i % 9)),
       createdAt: daysAgo(150 - i * 6),
       unsubscribedFrom: [],
+      history: [
+        ...signupHistory(daysAgo(150 - i * 6), 'booking sistem', 'Prijava uz označen pristanak'),
+        ...(unconfirmed
+          ? []
+          : [
+              {
+                at: daysAgo(150 - i * 6),
+                actor: 'pretplatnik',
+                action: 'Pristanak potvrđen (double opt-in)',
+                field: 'status',
+                from: 'UNCONFIRMED',
+                to: 'ENABLED',
+              },
+            ]),
+        ...(paused
+          ? [
+              {
+                at: daysAgo(20),
+                actor: 'Milena Vasić',
+                action: 'Slanje pauzirano (sunset)',
+                field: 'status',
+                from: 'ENABLED',
+                to: 'PAUSED',
+              },
+            ]
+          : []),
+      ],
     };
   }),
   {
@@ -140,6 +193,7 @@ const subscribers: Subscriber[] = [
     lastOpenAt: daysAgo(1),
     createdAt: daysAgo(300),
     unsubscribedFrom: [],
+    history: signupHistory(daysAgo(300), 'Milena Vasić', 'Interni test nalog'),
   },
 ];
 
@@ -466,6 +520,7 @@ export function buildSeed(): Store {
   return {
     lists,
     subscribers,
+    subscriberAudit: [],
     templates: SEED_TEMPLATES,
     campaigns,
     settings,
