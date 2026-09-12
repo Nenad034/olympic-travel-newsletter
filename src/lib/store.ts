@@ -1,0 +1,57 @@
+import 'server-only';
+import fs from 'node:fs';
+import path from 'node:path';
+import type { Store } from './types';
+import { buildSeed } from './seed';
+
+// File-backed skladište (data/store.json) — zamena za Listmonk bazu dok se motor ne poveže
+// (vidi `listmonk.ts`). Jedan JSON fajl, sinhrono čitanje/pisanje — dovoljno za interni
+// alat sa nekoliko korisnika; nema konkurentnih pisanja izvan jednog Node procesa.
+
+const DATA_DIR = path.join(process.cwd(), 'data');
+const STORE_PATH = path.join(DATA_DIR, 'store.json');
+
+let cache: Store | null = null;
+
+export function getStore(): Store {
+  if (cache) return cache;
+  try {
+    if (fs.existsSync(STORE_PATH)) {
+      cache = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as Store;
+      return cache;
+    }
+  } catch {
+    // oštećen fajl — kreni od semena
+  }
+  cache = buildSeed();
+  persist();
+  return cache;
+}
+
+function persist() {
+  if (!cache) return;
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(STORE_PATH, JSON.stringify(cache, null, 2), 'utf8');
+}
+
+/** Sve izmene idu kroz ovu funkciju — mutira store i odmah upisuje na disk. */
+export function mutate<T>(fn: (store: Store) => T): T {
+  const store = getStore();
+  const result = fn(store);
+  persist();
+  return result;
+}
+
+export function resetStore(): void {
+  cache = buildSeed();
+  persist();
+}
+
+export function newId(prefix: string): string {
+  const rnd = Math.random().toString(36).slice(2, 8);
+  return `${prefix}-${Date.now().toString(36)}${rnd}`;
+}
+
+export function now(): string {
+  return new Date().toISOString();
+}

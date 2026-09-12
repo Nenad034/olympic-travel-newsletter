@@ -1,0 +1,220 @@
+/* @import mora prethoditi svim ostalim pravilima (Turbopack CSS parser). */
+@import '@vscode/codicons/dist/codicon.css';
+@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Ikonice — Codicons, ista veličina/debljina kao u Terminal Travel panelu. */
+.codicon {
+  font-size: 21px !important;
+  -webkit-text-stroke: 0.27px currentColor;
+  text-stroke: 0.27px currentColor;
+  color: var(--icon-line);
+}
+.text-accent .codicon,
+.text-accent-strong .codicon,
+.text-danger .codicon,
+.text-ok .codicon,
+.text-warn .codicon,
+.text-ink .codicon,
+.text-ink-dim .codicon,
+.text-brand .codicon,
+.hover\:text-accent:hover .codicon,
+.hover\:text-accent-strong:hover .codicon,
+.hover\:text-danger:hover .codicon,
+.hover\:text-ink:hover .codicon,
+.hover\:text-ink-dim:hover .codicon {
+  color: inherit;
+}
+
+/* Paleta "Azur + Svetionik" (svetli mod) / zinc (tamni) / slate (dim) — preuzeto iz
+   Terminal Travel panela, sve vrednosti WCAG 2.1 AA proverene tamo. */
+:root {
+  --bg: #e8eef6;
+  --panel: #f9fbfd;
+  --sunken: #dbe4ef;
+  --panel-2: #dde6f1;
+  --bar: #dde6f1;
+  --border: #6c7a90;
+  --text: #232636;
+  --text-dim: #333645;
+  --text-faint: #464e5d;
+  --accent: #00686e;
+  --accent-strong: #004c4c;
+  --accent-soft: #00686e33;
+  --accent-ink: #ffffff;
+  --accent2: #4f46e5;
+  --accent2-soft: #4f46e51a;
+  --ok: #166534;
+  --ok-bg: #f0fdf4;
+  --warn: #92400e;
+  --warn-bg: #fffbeb;
+  --danger: #b91c1c;
+  --danger-bg: #fef2f2;
+  --icon-line: #1f3a5f;
+  --tab-line: #f97316;
+  --tab-line-strong: #c2410c;
+  --brand: #f97316;
+  --brand-ink: #1f1300;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #09090b;
+    --panel: #18181b;
+    --sunken: #131316;
+    --panel-2: #27272a;
+    --bar: #27272a;
+    --border: #748088;
+    --text: #fafafa;
+    --text-dim: #d4d4d8;
+    --text-faint: #a1a1aa;
+    --accent: #818cf8;
+    --accent-strong: #a5b4fc;
+    --accent-soft: #818cf833;
+    --accent-ink: #0b0b0f;
+    --accent2: #5eead4;
+    --accent2-soft: #5eead41a;
+    --ok: #4ade80;
+    --ok-bg: #0d1f13;
+    --warn: #fbbf24;
+    --warn-bg: #241a06;
+    --danger: #f87171;
+    --danger-bg: #240b0b;
+    --icon-line: currentColor;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #09090b;
+  --panel: #18181b;
+  --sunken: #131316;
+  --panel-2: #27272a;
+  --bar: #27272a;
+  --border: #748088;
+  --text: #fafafa;
+  --text-dim: #d4d4d8;
+  --text-faint: #a1a1aa;
+  --accent: #818cf8;
+  --accent-strong: #a5b4fc;
+  --accent-soft: #818cf833;
+  --accent-ink: #0b0b0f;
+  --accent2: #5eead4;
+  --accent2-soft: #5eead41a;
+  --ok: #4ade80;
+  --ok-bg: #0d1f13;
+  --warn: #fbbf24;
+  --warn-bg: #241a06;
+  --danger: #f87171;
+  --danger-bg: #240b0b;
+  --icon-line: currentColor;
+}
+
+:root[data-theme='light'] {
+  --bg: #e8eef6;
+  --panel: #f9fbfd;
+  --sunken: #dbe4ef;
+  --panel-2: #dde6f1;
+  --bar: #dde6f1;
+  --border: #6c7a90;
+  --text: #232636;
+  --text-dim: #333645;
+  --text-faint: #464e5d;
+  --accent: #00686e;
+  --accent-strong: #004c4c;
+  --accent-soft: #00686e33;
+  --accent-ink: #ffffff;
+  --accent2: #4f46e5;
+  --accent2-soft: #4f46e51a;
+  --ok: #166534;
+  --ok-bg: #f0fdf4;
+  --warn: #92400e;
+  --warn-bg: #fffbeb;
+  --danger: #b91c1c;
+  --danger-bg: #fef2f2;
+  --icon-line: #1f3a5f;
+}
+
+:root[data-theme='dim'] {
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --sunken: #16202f;
+  --panel-2: #334155;
+  --bar: #334155;
+  --border: #94a3b8;
+  --text: #f8fafc;
+  --text-dim: #cbd5e1;
+  --text-faint: #a3b0c2;
+  --accent: #818cf8;
+  --accent-strong: #a5b4fc;
+  --accent-soft: #818cf833;
+  --accent-ink: #0b1120;
+  --accent2: #5eead4;
+  --accent2-soft: #5eead41a;
+  --ok: #4ade80;
+  --ok-bg: #0d1f13;
+  --warn: #fbbf24;
+  --warn-bg: #241a06;
+  --danger: #f87171;
+  --danger-bg: #240b0b;
+  --icon-line: currentColor;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+  /* Panel upravlja svim sopstvenim skrolovanjem iznutra (Shell.tsx) — telo nikad ne skroluje. */
+  overflow: hidden;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+code,
+.mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+/* Nevidljiva skrol traka svuda — skrolovanje ostaje funkcionalno. */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
+@layer components {
+  .input {
+    width: 100%;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    padding: 0.5rem 0.65rem;
+    font-size: 0.8125rem;
+  }
+  .input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .input:disabled {
+    opacity: 0.6;
+  }
+  .label {
+    @apply mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint;
+  }
+  /* Traka naslova sekcije — "utonula" površina, uvek tamnija od sadržaja ispod. */
+  .section-head {
+    @apply flex items-center gap-2 rounded-t-lg bg-sunken px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint;
+  }
+}

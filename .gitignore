@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+.env
+.env.local
+.env*.local
+*.log
+coverage/
+# Lokalna file-backed baza (data/store.json) — seme se pravi iznova iz src/lib/seed.ts
+data/store.json
+.DS_Store

@@ -1,0 +1,156 @@
+# M-27: Newsletter / Mailing Modul
+
+**Status:** Draft spec — v0.1
+**Vlasnik:** Terminal Travel Agency (TTA)
+**Povezani moduli:** Content/Marketing domain agent, M-25 Semantični sloj (Cube.dev), B2B portal (subagent nalozi), Booking sistem
+
+---
+
+## 1. Svrha
+
+Modul za slanje newsletter/mailing komunikacije prema dva jasno odvojena segmenta:
+
+1. **B2B subagenti** — mreža ugovornih partnera sa nalozima na TTA portalu
+2. **Krajnji klijenti (B2C)** — putnici koji su izvršili booking preko agencije
+
+Modul mora da podrži i operativnu komunikaciju (cenovnici, alotmani, rokovi) i promotivnu/marketing komunikaciju, sa različitim pravilima pristanka i različitim tretmanom reputacije domena za svaki tok.
+
+---
+
+## 2. Arhitektura — komponente
+
+| Komponenta | Uloga |
+|---|---|
+| **Listmonk** (self-hosted, PostgreSQL) | Motor: liste, pretplatnici, kampanje, bounce/complaint obrada |
+| **Amazon SES** | Transport sloj za slanje |
+| **Amazon SNS** | Prenosi bounce/complaint/delivery evente ka Listmonk-u |
+| **Claude Design (MCP)** | Kreiranje i redizajn HTML template-a newsletter-a (retko, po potrebi) |
+| **Claude API** (messages endpoint) | Automatsko punjenje template-a sadržajem po kampanji |
+| **Custom UI sloj** | Interfejs preko kog marketing tim pokreće/odobrava kampanje, poziva Listmonk API u pozadini |
+| **B2B portal** | Izvor auto-subscribe evenata za subagente |
+| **Booking sistem** | Izvor auto-subscribe evenata za krajnje klijente |
+| **M-25 Semantični sloj (Cube.dev)** | Prijem podataka o performansama kampanja radi analitike |
+
+Listmonk se ne izlaže krajnjim korisnicima direktno — čitav frontend za kreiranje i pregled kampanja je custom, u TTA dizajn sistemu (navy/gold/sand), a Listmonk ostaje "motor" u pozadini dostupan preko svog REST API-ja.
+
+---
+
+## 3. Segmentacija liste i tokova
+
+### 3.1 B2B (subagenti)
+
+Jedan red = jedan subagent = jedan email (nema nested kontakata unutar firme za sada).
+
+Dva odvojena toka, iste baze:
+
+- **Operativni tok** — cenovnici, promena alotmana, rokovi uplate, hitna obaveštenja.
+  - Auto opt-in pri kreiranju portal naloga.
+  - Nema unsubscribe opcije (deo poslovnog odnosa, ne marketing).
+  - Zaseban SES configuration set, da se statistika ne meša sa promotivnim slanjem.
+
+- **Promotivni tok** — nove destinacije, kampanje, ponude za prosleđivanje krajnjim klijentima.
+  - Opt-out po defaultu (poslovni kontekst, ne zahteva eksplicitan opt-in kao kod fizičkih lica).
+  - Standardan unsubscribe link.
+  - Odjava sa ovog toka ne sme da utiče na operativni tok.
+
+### 3.2 B2C (krajnji klijenti)
+
+- Jedna lista, eksplicitan opt-in u trenutku bookinga (čekboks, ne prećutna saglasnost).
+- Standardan double opt-in flow kroz Listmonk.
+- Puna primena Zakona o zaštiti podataka o ličnosti: consent timestamp, izvor prijave, pravo na brisanje na zahtev.
+
+### 3.3 Izolacija domena
+
+Dva verifikovana SES identiteta na odvojenim poddomenima:
+
+- `b2b.olympic.rs` (ili ekvivalent) — subagenti, oba toka
+- `newsletter.olympic.rs` (ili ekvivalent) — krajnji klijenti
+
+Razlog: loša reputacija na jednoj strani (npr. veći broj spam prijava od krajnjih klijenata) ne sme da ugrozi isporuku kritične B2B komunikacije.
+
+---
+
+## 4. SES konfiguracija
+
+- SPF, DKIM, DMARC na oba poddomena.
+- **DMARC rollout u fazama:** `p=none` (monitoring, par nedelja) → `p=quarantine` → `p=reject`. Ne ići direktno na strogo — greška u SPF/DKIM konfiguraciji bi inače nečujno blokirala legitimna slanja.
+- Production access zahtev ka AWS-u (izlazak iz sandboxa) sa opisom use-case-a i očekivanog volumena.
+- Configuration sets: minimum dva (B2B operativno / B2B promotivno), plus poseban za B2C.
+- SNS topic po domenu, subscribe na Listmonk-ov `/webhooks/service/ses` endpoint (native podrška, potvrđeno u zvaničnoj Listmonk dokumentaciji) — pokriva bounce, complaint i delivery evente.
+- Postepeno "zagrevanje" (warm-up) pri prelasku na nov domen/IP — ne krenuti sa punim volumenom prvog dana.
+
+---
+
+## 5. Tok kreiranja i slanja kampanje
+
+### 5.1 Kreiranje/redizajn template-a (retko, epizodno)
+
+1. Marketing tim (ili agent preko MCP-a) koristi **Claude Design** da kreira ili redizajna vizuelni template newsletter-a, sa primenjenim TTA dizajn sistemom.
+2. Export kao čist HTML/CSS.
+3. Template se čuva u TTA sistemu sa definisanim placeholder poljima (naslov ponude, opis, cena, slika, CTA link, itd.), odvojeno za B2B i B2C stil ako je potrebno.
+
+### 5.2 Popunjavanje sadržaja i slanje (svaka kampanja)
+
+1. Agent (content/marketing domain agent) poziva **Claude API** sa podacima za tekuću kampanju (aktuelne ponude, cene, segment kome je namenjeno).
+2. Claude API popunjava placeholdere u postojećem template-u i vraća finalni HTML.
+3. **Human-approval gate:** generisani draft ide na odobrenje pre slanja — u skladu sa postojećim TTA principom "agent priprema, čovek odobrava" za sve nepovratne akcije. Masovno slanje je nepovratno, pa se ne šalje automatski bez potvrde osobe iz marketing tima.
+4. Nakon odobrenja, finalni HTML se prosleđuje **Listmonk API**-ju koji kreira kampanju na odgovarajućoj listi/configuration setu.
+5. Pre slanja na punu bazu, kampanja se šalje na internu test listu (par TTA zaposlenih) radi provere renderovanja u različitim mail klijentima (Gmail, Outlook, mobilni).
+6. Listmonk šalje kampanju preko SES-a.
+
+---
+
+## 6. Zakazivanje slanja i paralelno upravljanje sa više kampanja
+
+Listmonk nativno podržava zakazivanje kampanje na tačan datum i vreme (`send_at` polje na campaign objektu, status `scheduled` dok se ne izvrši). Ovo se koristi kao osnova, bez potrebe za dodatnom infrastrukturom za red čekanja.
+
+### 6.1 Zakazivanje pojedinačne kampanje
+
+- Pri kreiranju kampanje (nakon human-approval koraka iz sekcije 5.2), osoba koja odobrava bira: **pošalji odmah** ili **zakaži za datum i vreme**.
+- Zakazana kampanja ide u Listmonk sa statusom `scheduled` i tačnim `send_at` vremenom; ostaje vidljiva i izmenljiva do trenutka slanja.
+- Custom UI sloj mora da omogući izmenu ili otkazivanje već zakazane kampanje pre nego što krene slanje.
+
+### 6.2 Više paralelnih newsletter-a sa različitim terminima
+
+- Ne postoji ograničenje na jednu aktivnu zakazanu kampanju — više odvojenih newsletter-a (npr. jedan za B2B promotivni tok, jedan za B2C, jedan sezonski) mogu istovremeno postojati u statusu `scheduled`, svaki sa sopstvenim datumom/vremenom i sopstvenom listom/segmentom.
+- Custom UI treba da prikaže **kalendarski/listovni pregled** svih zakazanih kampanja (naziv, segment, datum/vreme, status), da marketing tim ima uvid u sve što je u redu za slanje, ne samo poslednju kreiranu.
+- Operativna napomena: ako se dve veće kampanje zakažu u kratkom vremenskom razmaku (npr. obe u istom satu), vredi u UI-ju upozoriti korisnika — veliki uzastopni sendovi mogu opteretiti SES throughput i tempo slanja, bolje ih razmaknuti makar 30–60 minuta.
+
+### 6.3 Odnos prema odobravanju sadržaja
+
+Zakazivanje ne zaobilazi human-approval gate iz sekcije 5.2 — odobrava se i sadržaj i termin slanja zajedno, pre nego što kampanja pređe u status `scheduled`. Izmena termina posle odobrenja sadržaja ne zahteva ponovno odobravanje sadržaja, samo potvrdu novog datuma/vremena.
+
+---
+
+## 7. Auto-subscribe integracija
+
+- **B2B:** kreiranje naloga na portalu → API poziv ka Listmonk-u → subagent se automatski dodaje na operativnu listu (obavezno) i promotivnu listu (opt-out dostupan odmah).
+- **B2C:** potvrda bookinga sa označenim pristankom → API poziv ka Listmonk-u → dodavanje na B2C listu → pokreće se double opt-in flow.
+
+Nema ručnog unosa u bilo kom slučaju — subscribe se uvek okida iz izvornog sistema (portal ili booking), čime se izbegava dupliranje baze i neusklađenost podataka o pristanku.
+
+---
+
+## 8. Sunset / re-engagement politika
+
+- Ako pretplatnik (B2C ili B2B-promotivni tok) ne otvori nijedan mejl u periodu od 6 meseci → automatska re-engagement kampanja.
+- Ako ni tada nema reakcije → pauziranje daljeg slanja na tu adresu.
+- Cilj: zaštita reputacije domena kod Gmail/Outlook filtera; lakše ugraditi ovo pravilo od početka nego naknadno čistiti bazu.
+
+---
+
+## 9. Analitika
+
+- Metrike kampanja (open rate, click rate, bounce rate) po segmentu i tipu toka slivaju se u **M-25 semantični sloj** (Cube.dev), ne ostaju zaključane u Listmonk-ovom internom UI-ju.
+- Cilj na duži rok: agent koji na osnovu istorijskih podataka predlaže koji tip ponude bolje prolazi kod kog segmenta.
+
+---
+
+## 10. Otvorena pitanja za sledeću iteraciju
+
+- Tačan naziv/struktura poddomena za SES identitete.
+- Da li B2B promotivni opt-out ide odmah pri kreiranju naloga ili nakon prvog slanja (pravna provera preporučena, van obima ovog dokumenta).
+- Format API kontrata između portala/booking sistema i Listmonk-a (REST payload šema).
+- Da li custom UI sloj ide kao zaseban modul ili deo postojećeg content/marketing agent interfejsa.
+- Retencija test/staging liste i ko su interni test primaoci.
+- Da li je potreban prag/pravilo za automatsko upozorenje kad se dve velike kampanje zakažu preblizu jedna drugoj (sekcija 6.2), ili je dovoljna ručna provera od strane marketing tima.
