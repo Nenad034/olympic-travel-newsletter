@@ -33,6 +33,7 @@ export function getStore(): Store {
 function normalize(store: Store): Store {
   store.subscriberAudit ??= [];
   store.suppressions ??= [];
+  store.agentInvocations ??= [];
   for (const s of store.subscribers) s.history ??= [];
   return store;
 }

@@ -522,6 +522,7 @@ export function buildSeed(): Store {
     subscribers,
     subscriberAudit: [],
     suppressions: [],
+    agentInvocations: [],
     templates: SEED_TEMPLATES,
     campaigns,
     settings,

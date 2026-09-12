@@ -217,6 +217,20 @@ export interface DeliveryEvent {
   detail: string;
 }
 
+/** Jedan poziv AI agenta — trošak i trajanje, bez teksta upita (M18 obrazac iz Terminal Travel:
+ * dnevnik služi za uvid u potrošnju, ne za čitanje razgovora). */
+export interface AgentInvocation {
+  at: string;
+  actionCode: string;
+  generatedBy: 'CLAUDE' | 'LOKALNO';
+  model: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+  iterations: number;
+  tools: string[];
+}
+
 export interface Store {
   lists: MailingList[];
   subscribers: Subscriber[];
@@ -224,6 +238,8 @@ export interface Store {
   subscriberAudit: SubscriberAuditEntry[];
   /** Adrese obrisane na zahtev — ručni unos i CSV uvoz ih odbijaju. */
   suppressions: Suppression[];
+  /** Dnevnik poziva AI agenta (spec §11). */
+  agentInvocations: AgentInvocation[];
   templates: Template[];
   campaigns: Campaign[];
   settings: Settings;

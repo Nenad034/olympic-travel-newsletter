@@ -16,6 +16,7 @@ import {
   type ActionResult,
 } from '@/app/actions';
 import { useInspector } from './InspectorContext';
+import { useAiContext } from './AiContextContext';
 import { fmtDate, fmtRelative } from '@/lib/datum';
 import type { DeliveryEvent, MailingList, Subscriber } from '@/lib/types';
 
@@ -43,6 +44,7 @@ export default function SubscribersTable({
 }) {
   const router = useRouter();
   const { target, inspect } = useInspector();
+  const { addRecord, atCapacity } = useAiContext();
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
   const [q, setQ] = useState('');
@@ -152,6 +154,9 @@ export default function SubscribersTable({
                   <TableCell className="whitespace-nowrap text-ink-dim">{s.lastOpenAt ? fmtRelative(s.lastOpenAt) : '—'}</TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      <Button size="sm" variant="ghost" disabled={atCapacity} title={atCapacity ? 'Kontekst agenta je pun' : 'Dodaj u AI kontekst'} onClick={() => addRecord('PRETPLATNIK', `${s.name} <${s.email}>`)}>
+                        <Icon name="sparkle" className="!text-[12px]" />
+                      </Button>
                       {s.status === 'UNCONFIRMED' && (
                         <Button size="sm" variant="secondary" disabled={pending} title="Simuliraj klik na double opt-in link" onClick={() => run(() => confirmOptinAction(s.id), 'Prijava potvrđena.')}>
                           <Icon name="check" className="!text-[12px]" /> potvrdi

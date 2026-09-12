@@ -165,6 +165,20 @@ Dve situacije automatski tok ne pokriva: prenos postojeće baze subagenata iz st
 
 ---
 
+## 9a. NewsletterAgent (razgovor sa modulom)
+
+Agent u panelu odgovara na pitanja o stanju baze, kampanja i isporuke. Obrazac je preuzet iz OmnisearchAgent-a u Terminal Travel panelu (`apps/api/src/modules/m15-ai-orkestracija/omnisearch`), jer rešava isti problem pod istim ograničenjem — čovek odobrava, agent ne izvršava.
+
+- **Alati su isključivo za čitanje** (`stanje_baze`, `nadji_pretplatnika`, `stanje_kampanja`, `stanje_isporuke`). Agent nema nijednu funkciju koja menja stanje; kad upit liči na zahtev za radnju, odgovor objašnjava radnju i vodi na ekran gde je čovek potvrđuje (§5.2).
+- **Linkovi se izvode iz alata koji su stvarno pozvani**, ne iz modela — agent ne može da uputi na rutu koja ne postoji.
+- **Prompt injection**: rezultati alata nose slobodan tekst koji su upisali ljudi izvan marketing tima (ime i firma iz portala, osnov pristanka iz uvoza, brif kampanje). Sistemski prompt taj tekst tretira kao podatak koji se citira ili sažima, nikad kao instrukciju.
+- **Kontekst**: uz pitanje se šalje vidljiv tekst otvorene stranice i zapisi koje je korisnik svesno priložio („Dodaj u AI kontekst" na redu). Priložen zapis je referenca, ne sirov podatak — agent ga razrešava svojim alatom.
+- **Bez trajne memorije**: prethodne ture razgovora šalje panel uz svaki poziv (poslednjih 6), server ne čuva poruke.
+- **Dnevnik poziva** (`Store.agentInvocations`): vreme, model, tokeni, trajanje, iteracije i pozvani alati — **bez teksta upita**; dnevnik služi za uvid u potrošnju, ne za čitanje razgovora.
+- **Bez API ključa** modul radi u mock režimu, pa agent sklapa odgovor lokalno iz istih alata i to jasno kaže — ne pretvara se da je model.
+
+---
+
 ## 10. Otvorena pitanja za sledeću iteraciju
 
 ### 10.1 Rešeno implementacijom
@@ -187,4 +201,6 @@ Dve situacije automatski tok ne pokriva: prenos postojeće baze subagenata iz st
 - Da li custom UI sloj ide kao zaseban modul ili deo postojećeg content/marketing agent interfejsa.
 - Retencija test/staging liste i ko su interni test primaoci.
 - Rok čuvanja suppression zapisa — hash nije ličan podatak u istom smislu, ali lista ne treba da raste zauvek.
+- Budžet i limit potrošnje po korisniku za agenta (Terminal Travel to rešava u M18 `ai-agent-budgets`, ovde zasad postoji samo dnevnik poziva).
+- Da li agent treba da vidi i sadržaj kampanja (brif, HTML) ili da ostane na brojnom stanju.
 - Ponašanje schedulera kad aplikacija radi u više instanci: tajmer je po instanci, pa bi dve instance obradile istu kampanju; traži zaključavanje na nivou store-a ili jednu određenu instancu.

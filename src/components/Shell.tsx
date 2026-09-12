@@ -11,6 +11,8 @@ import StatusBar from './StatusBar';
 import CommandPalette from './CommandPalette';
 import { TabsProvider } from './TabsContext';
 import { InspectorProvider, type InspectTarget } from './InspectorContext';
+import { AiContextProvider } from './AiContextContext';
+import AiAgentBox from './AiAgentBox';
 import { NAV_GROUPS, groupForPath } from '@/lib/nav';
 
 const SIDEBAR_COLLAPSED_KEY = 'ot-newsletter-sidebar-collapsed';
@@ -49,6 +51,7 @@ export default function Shell({
   const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
   const [activeGroupId, setActiveGroupId] = useState(() => groupForPath(pathname).id);
   const [inspectTarget, setInspectTarget] = useState<InspectTarget | null>(null);
+  const [agentOpen, setAgentOpen] = useState(false);
   const [leftColumnWidth, setLeftColumnWidth] = useState(43 + DEFAULT_SIDEBAR_WIDTH);
   const leftColRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -171,6 +174,7 @@ export default function Shell({
   return (
     <TabsProvider>
       <InspectorProvider value={inspector}>
+      <AiContextProvider onFirstAdd={() => setAgentOpen(true)}>
       <div className="flex h-screen flex-col overflow-hidden bg-bg text-ink">
         <TopBar leftColumnWidth={leftColumnWidth} />
         <div className="flex min-h-0 flex-1">
@@ -243,11 +247,24 @@ export default function Shell({
               </div>
             </>
           )}
-          <RightRail rightPanelOpen={rightOpen} onToggleRightPanel={toggleRight} />
+          <RightRail
+            rightPanelOpen={rightOpen}
+            onToggleRightPanel={toggleRight}
+            agentOpen={agentOpen}
+            onToggleAgent={() => setAgentOpen((v) => !v)}
+          />
         </div>
         <StatusBar fullName={fullName} roleLabel={roleLabel} />
         <CommandPalette />
+        {/* Prozor agenta lebdi iznad radnog prostora, ne oduzima mu širinu — razgovor prati
+            ono što je na ekranu, pa ekran mora da ostane vidljiv. */}
+        {agentOpen && (
+          <div className="fixed bottom-[30px] right-[51px] z-40 flex h-[520px] max-h-[calc(100vh-80px)] w-[380px] max-w-[calc(100vw-70px)] overflow-hidden rounded-lg border border-border shadow-lg">
+            <AiAgentBox onClose={() => setAgentOpen(false)} />
+          </div>
+        )}
       </div>
+      </AiContextProvider>
       </InspectorProvider>
     </TabsProvider>
   );

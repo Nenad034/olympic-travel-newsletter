@@ -9,9 +9,13 @@ import { useTabs } from './TabsContext';
 export default function RightRail({
   rightPanelOpen,
   onToggleRightPanel,
+  agentOpen,
+  onToggleAgent,
 }: {
   rightPanelOpen: boolean;
   onToggleRightPanel: () => void;
+  agentOpen: boolean;
+  onToggleAgent: () => void;
 }) {
   const { openTab } = useTabs();
   const [pending, setPending] = useState<number | null>(null);
@@ -62,11 +66,22 @@ export default function RightRail({
       >
         <Icon name={rightPanelOpen ? 'layout-sidebar-right' : 'layout-sidebar-right-off'} />
       </button>
+      <button
+        onClick={() => openTab('/kampanje/nova', 'Nova kampanja')}
+        title="Nova kampanja (agent priprema, čovek odobrava)"
+        className="flex h-[36px] w-[36px] flex-shrink-0 items-center justify-center rounded-md bg-panel text-ink-faint hover:bg-panel2 hover:text-ink"
+      >
+        <Icon name="add" />
+      </button>
       <div className="relative mt-auto flex-shrink-0">
         <button
-          onClick={() => openTab('/kampanje/nova', 'Nova kampanja')}
-          title="Nova kampanja (agent priprema, čovek odobrava)"
-          className="flex h-[36px] w-[36px] items-center justify-center rounded-md bg-panel text-ink-faint hover:bg-panel2 hover:text-ink"
+          onClick={onToggleAgent}
+          title="Agent — pitaj o stanju baze, kampanja i isporuke (ne izvršava radnje)"
+          className={`flex h-[36px] w-[36px] items-center justify-center rounded-md ${
+            agentOpen
+              ? 'bg-accent-soft text-accent-strong'
+              : 'bg-panel text-ink-faint hover:bg-panel2 hover:text-ink'
+          }`}
         >
           <Icon name="sparkle" />
         </button>
