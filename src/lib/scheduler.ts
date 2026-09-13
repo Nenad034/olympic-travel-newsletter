@@ -1,5 +1,5 @@
 import 'server-only';
-import { processDueCampaigns } from './campaigns';
+import { processDueCampaigns, refreshLiveStatuses } from './campaigns';
 import { reloadStore } from './store';
 import { instanceId, tryAcquire } from './scheduler-lock';
 
@@ -21,10 +21,14 @@ const LEASE_FACTOR = 5;
 const MIN_LEASE_MS = 120_000;
 
 /** Tajmer i zastavica žive na globalnom objektu — dev HMR ponovo učitava modul, a proces
- * ostaje isti, pa bi se inače pravio novi tajmer uz svaki reload. */
+ * ostaje isti, pa bi se inače pravio novi tajmer uz svaki reload. Tajmer NE sme da drži
+ * zatvaranje nad `tick`-om iz modula koji ga je napravio: posle HMR-a bi zauvek vrteo staru
+ * verziju koda (uočeno 13.9.2026 — novi `refreshLiveStatuses` se nije izvršavao do restarta).
+ * Zato zove `state.__otNewsletterScheduler.tick`, koji svaki reload modula prepiše. */
 const state = globalThis as typeof globalThis & {
-  __otNewsletterScheduler?: { timer: NodeJS.Timeout; running: boolean; holder: string };
+  __otNewsletterScheduler?: { timer: NodeJS.Timeout; running: boolean; holder: string; tick: () => Promise<void> };
 };
+if (state.__otNewsletterScheduler) state.__otNewsletterScheduler.tick = tick;
 
 function intervalMs(): number {
   const raw = Number(process.env.SCHEDULER_INTERVAL_MS);
@@ -62,6 +66,9 @@ async function tick(): Promise<void> {
   try {
     const processed = await processDueCampaigns();
     if (processed > 0) console.log(`[scheduler] obrađeno dospelih kampanja: ${processed}`);
+    // Kampanje koje Listmonk šalje sam: preuzmi njegov status i brojke.
+    const refreshed = await refreshLiveStatuses();
+    if (refreshed > 0) console.log(`[scheduler] status preuzet iz Listmonk-a za kampanja: ${refreshed}`);
   } catch (e) {
     console.error('[scheduler] greška pri obradi dospelih kampanja:', e);
   } finally {
@@ -74,10 +81,10 @@ async function tick(): Promise<void> {
 export function startScheduler(): void {
   if (state.__otNewsletterScheduler) return;
   const ms = intervalMs();
-  const timer = setInterval(() => void tick(), ms);
+  const timer = setInterval(() => void state.__otNewsletterScheduler?.tick(), ms);
   // Tajmer ne sme da drži proces u životu (npr. `next build` ili gašenje servera).
   timer.unref?.();
-  state.__otNewsletterScheduler = { timer, running: false, holder: instanceId() };
+  state.__otNewsletterScheduler = { timer, running: false, holder: instanceId(), tick };
   console.log(`[scheduler] pokrenut, interval ${ms / 1000}s`);
   void tick();
 }

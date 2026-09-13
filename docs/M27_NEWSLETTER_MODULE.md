@@ -33,6 +33,18 @@ Modul mora da podrži i operativnu komunikaciju (cenovnici, alotmani, rokovi) i 
 
 Listmonk se ne izlaže krajnjim korisnicima direktno — čitav frontend za kreiranje i pregled kampanja je custom, u TTA dizajn sistemu (navy/gold/sand), a Listmonk ostaje "motor" u pozadini dostupan preko svog REST API-ja.
 
+### 2.1 Ugovor sa Listmonk-om (provereno protiv v6.2.0, 13.9.2026)
+
+Prvi prolaz celog toka protiv pravog motora (`docker/listmonk`, SMTP → Mailpit) umesto mock-a. Sve ispod je zatečeno i rešeno tada; adapter je `src/lib/listmonk.ts`.
+
+- **Autentikacija**: samo API korisnik sa tokenom (`Authorization: token korisnik:token`); Basic auth admin nalogom API odbija. Env: `LISTMONK_URL`, `LISTMONK_API_USER`, `LISTMONK_API_TOKEN`. Lokalno API korisnika i SMTP podešava `scripts/listmonk-dev-setup.mjs`.
+- **Povezivanje** (SES i domeni → „Poveži sa Listmonk-om", `listmonk.syncSetup`): modul u motoru pronađe po imenu ili napravi svoje 3 liste, transakcioni omotač (`{{ .Tx.Data.subject }}` / `{{ .Tx.Data.body }}`) i „čist" kampanjski omotač (`{{ template "content" . }}`), pa ID-jeve upiše u store (`MailingList.listmonkListId`, `Settings.listmonk*TemplateId`). Ranije mapiranje ID-ja liste hash-om iz stringa je uklonjeno — u pravom motoru bi pokazivalo na tuđu listu. Bez povezivanja LIVE slanje odbija da krene. Isto povezivanje prenosi i **celu bazu pretplatnika** (upsert po adresi, sa listama i statusom); nepotvrđeni B2C pretplatnici time dobijaju Listmonk double opt-in mejl — to je ispravno, ali pri migraciji prave baze znači potvrdni mejl svakom nepotvrđenom.
+- **Test slanje testira postojeću kampanju** (`POST /campaigns/{id}/test`), pa nacrt u motoru nastaje pri **prvom testu**, ne pri odobrenju; odobrenje ga ažurira (`PUT` traži ceo zapis) i prebacuje u `scheduled`/`running`. Test primaoci moraju da postoje kao pretplatnici — upisuju se bez liste. Payload traži `messenger: 'email'`.
+- **Šablonske oznake**: Listmonk razume samo `{{ UnsubscribeURL }}` i `{{ MessageURL }}` (Go template); jednostruka zagrada ostaje bukvalno u mejlu. Naš popunjivač polja hvata `{{kljuc}}` bez razmaka, pa se ne sudaraju.
+- **Status prati motor**: Listmonk šalje kampanje asinhrono, pa scheduler na svaki tik povlači status i brojke (`campaigns.refreshLiveStatuses`: `finished` → Poslato, `running` → Šalje se, `cancelled` → Otkazano). Bez toga bi poslata kampanja ostala „Šalje se" zauvek.
+- **Promena termina** zakazane kampanje ide `scheduled → draft → PUT → scheduled` — Listmonk ne dozvoljava izmenu dok je zakazana.
+- **Keš store-a** važi samo dok se `mtime` fajla ne promeni: Next bundluje stranice, akcije i API rute odvojeno, pa svaki bundle ima svoju kopiju keša (pregled mejla je javljao „Kampanja ne postoji" za sveže napravljenu kampanju).
+
 ---
 
 ## 3. Segmentacija liste i tokova

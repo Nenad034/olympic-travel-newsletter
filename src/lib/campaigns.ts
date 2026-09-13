@@ -11,13 +11,6 @@ import type { Campaign, CampaignStatus, MailingList, Segment, Store, Template } 
 
 export const CURRENT_USER = 'Milena Vasić';
 
-export function listIdNumber(listId: string): number {
-  // Listmonk koristi numeričke ID-jeve lista; mapiramo stabilno iz stringa.
-  let h = 0;
-  for (const c of listId) h = (h * 31 + c.charCodeAt(0)) % 100000;
-  return h + 1;
-}
-
 function requireCampaign(store: Store, id: string): Campaign {
   const c = store.campaigns.find((x) => x.id === id);
   if (!c) throw new Error('Kampanja ne postoji');
@@ -175,18 +168,28 @@ export async function sendTestEmail(id: string, recipients: string[]): Promise<C
   if (c.deliveryMode === 'TRANSAKCIONO') {
     // Operativni tok nema Listmonk kampanju — test ide istim transakcionim kanalom (§3.1.1).
     const list = requireList(store, c.listId);
+    await listmonk.ensureSubscribers(store, emails);
     await listmonk.sendTransactional({
       emails,
       subject: `[TEST] ${c.subject}`,
       html: payload.body,
       fromEmail: `Olympic Travel <obavestenja@${list.sendingDomain}>`,
       headers: payload.headers ?? [],
+      templateId: store.settings.listmonkTxTemplateId,
     });
-  } else if (c.listmonkCampaignId) {
-    await listmonk.sendTest(c.listmonkCampaignId, emails, payload);
+  }
+  // Listmonk testira POSTOJEĆU kampanju (`/campaigns/{id}/test`), pa nacrt u motoru mora da
+  // postoji već pri prvom testu — ne tek pri odobrenju. Do 13.9.2026 je test pre odobrenja u LIVE
+  // režimu tiho preskakan, a UI javljao „uspešno".
+  const listmonkId =
+    c.deliveryMode === 'TRANSAKCIONO' ? c.listmonkCampaignId : await ensureListmonkDraft(c, payload);
+  if (c.deliveryMode !== 'TRANSAKCIONO' && listmonkId) {
+    await listmonk.ensureSubscribers(store, emails);
+    await listmonk.sendTest(listmonkId, emails, payload);
   }
   return mutate((s) => {
     const cc = requireCampaign(s, id);
+    cc.listmonkCampaignId = listmonkId;
     cc.testSentAt = now();
     cc.testRecipients = emails;
     log(cc, 'Test slanje', `${emails.length} primalaca: ${emails.join(', ')}`);
@@ -194,18 +197,37 @@ export async function sendTestEmail(id: string, recipients: string[]): Promise<C
   });
 }
 
+/**
+ * Nacrt kampanje u Listmonk-u — napravi ga ako ne postoji, inače mu upiše aktuelan sadržaj.
+ * Listmonk `PUT /campaigns/{id}` traži CEO zapis (ne parcijalan), zato uvek ide pun payload.
+ */
+async function ensureListmonkDraft(
+  c: Campaign,
+  payload: listmonk.ListmonkCampaignPayload,
+): Promise<number | null> {
+  if (c.listmonkCampaignId) {
+    await listmonk.updateCampaign(c.listmonkCampaignId, payload);
+    return c.listmonkCampaignId;
+  }
+  const r = await listmonk.createCampaign({ ...payload, send_at: null });
+  return r.campaignId;
+}
+
 function buildPayload(store: Store, c: Campaign): listmonk.ListmonkCampaignPayload {
   const list = requireList(store, c.listId);
   return {
     name: c.name,
     subject: c.subject,
-    lists: [listIdNumber(list.id)],
+    lists: [listmonk.resolveListId(store, list.id)],
     from_email: `Olympic Travel <newsletter@${list.sendingDomain}>`,
     content_type: 'html',
+    messenger: 'email',
     body: c.bodyHtml ?? renderCampaignHtml(store, c),
     send_at: c.sendAt,
     headers: [{ 'X-SES-CONFIGURATION-SET': list.configurationSet }],
     tags: [c.segment.toLowerCase()],
+    // Čist omotač iz sinhronizacije; bez njega Listmonk uzima svoj podrazumevani šablon.
+    template_id: store.settings.listmonkCampaignTemplateId ?? undefined,
   };
 }
 
@@ -227,6 +249,7 @@ async function sendTransactionalNow(store: Store, c: Campaign): Promise<listmonk
     html: c.bodyHtml ?? renderCampaignHtml(store, c),
     fromEmail: `Olympic Travel <obavestenja@${list.sendingDomain}>`,
     headers: [{ 'X-SES-CONFIGURATION-SET': list.configurationSet }],
+    templateId: store.settings.listmonkTxTemplateId,
   });
 }
 
@@ -253,15 +276,20 @@ export async function approve(id: string, sendAt: string | null): Promise<Campai
   if (transactional) {
     if (!sendAt) result = await sendTransactionalNow(store, { ...c, bodyHtml: payload.body });
   } else {
-    result = await listmonk.createCampaign(payload);
-    await listmonk.setCampaignStatus(result.campaignId, sendAt ? 'scheduled' : 'running');
+    // Nacrt u motoru već postoji od test slanja (obaveznog pre odobrenja); ovde dobija konačan
+    // sadržaj i termin, pa prelazi u scheduled / running.
+    const campaignId = (await ensureListmonkDraft(c, payload))!;
+    await listmonk.setCampaignStatus(campaignId, sendAt ? 'scheduled' : 'running');
+    result = { mode: listmonk.listmonkMode(), campaignId };
   }
 
   return mutate((s) => {
     const cc = requireCampaign(s, id);
     cc.approvedBy = CURRENT_USER;
     cc.approvedAt = now();
-    cc.listmonkCampaignId = result?.campaignId ?? null;
+    // Transakciono slanje nema kampanju u motoru — ID koji `sendTransactional` vraća je samo
+    // brojač za dnevnik, ne bi smeo da se prikaže kao „Listmonk kampanja #N".
+    cc.listmonkCampaignId = transactional ? null : (result?.campaignId ?? null);
     cc.bodyHtml = payload.body;
     if (sendAt) {
       cc.sendAt = sendAt;
@@ -287,8 +315,11 @@ export async function reschedule(id: string, sendAt: string): Promise<Campaign> 
   const c = requireCampaign(store, id);
   assertStatus(c, ['SCHEDULED'], 'Promena termina');
   if (new Date(sendAt).getTime() < Date.now() - 60_000) throw new Error('Termin je u prošlosti');
-  if (c.listmonkCampaignId) {
-    await listmonk.updateCampaign(c.listmonkCampaignId, { send_at: sendAt });
+  if (c.listmonkCampaignId && c.deliveryMode !== 'TRANSAKCIONO') {
+    // Zakazana Listmonk kampanja se ne može menjati dok je `scheduled` — nazad u draft, pa ceo
+    // zapis sa novim terminom, pa ponovo scheduled.
+    await listmonk.setCampaignStatus(c.listmonkCampaignId, 'draft');
+    await listmonk.updateCampaign(c.listmonkCampaignId, buildPayload(store, { ...c, sendAt }));
     await listmonk.setCampaignStatus(c.listmonkCampaignId, 'scheduled');
   }
   return mutate((s) => {
@@ -303,7 +334,11 @@ export async function cancel(id: string): Promise<Campaign> {
   const store = getStore();
   const c = requireCampaign(store, id);
   assertStatus(c, ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'SCHEDULED'], 'Otkazivanje');
-  if (c.listmonkCampaignId) await listmonk.setCampaignStatus(c.listmonkCampaignId, 'cancelled');
+  // Listmonk `cancelled` važi samo za scheduled/running; nacrt (test poslat, još neodobren) se
+  // u motoru ne dira — ostaje draft koji je bezopasan, a ovde više nema ko da ga pokrene.
+  if (c.listmonkCampaignId && c.deliveryMode !== 'TRANSAKCIONO' && c.status === 'SCHEDULED') {
+    await listmonk.setCampaignStatus(c.listmonkCampaignId, 'cancelled');
+  }
   return mutate((s) => {
     const cc = requireCampaign(s, id);
     cc.status = 'CANCELLED';
@@ -361,6 +396,63 @@ export async function processDueCampaigns(): Promise<number> {
     ),
   );
   return toFinish.length;
+}
+
+/**
+ * LIVE režim: Listmonk šalje kampanje sam i asinhrono, pa naš status (Šalje se / Zakazano) mora
+ * da prati njegov — bez ovoga bi poslata kampanja kod nas zauvek ostala „Šalje se" (uočeno
+ * 13.9.2026 na prvom prolazu protiv pravog motora). Zove je scheduler na svaki tik; brojke
+ * (poslato, otvaranja, klikovi, bounce) su Listmonk-ove, ne procena.
+ */
+export async function refreshLiveStatuses(): Promise<number> {
+  if (listmonk.listmonkMode() !== 'LIVE') return 0;
+  const store = getStore();
+  const watched = store.campaigns.filter(
+    (c) =>
+      c.deliveryMode !== 'TRANSAKCIONO' &&
+      c.listmonkCampaignId &&
+      (c.status === 'RUNNING' || c.status === 'SCHEDULED'),
+  );
+  let changed = 0;
+  for (const c of watched) {
+    let remote: listmonk.ListmonkCampaignState | null;
+    try {
+      remote = await listmonk.getCampaign(c.listmonkCampaignId!);
+    } catch (e) {
+      mutate((s) => log(requireCampaign(s, c.id), 'Provera stanja u Listmonk-u nije uspela', e instanceof Error ? e.message : String(e), 'Listmonk'));
+      continue;
+    }
+    if (!remote) continue;
+    mutate((s) => {
+      const cc = requireCampaign(s, c.id);
+      if (remote.status === 'finished' || remote.status === 'running') {
+        cc.stats = {
+          ...cc.stats,
+          sent: remote.sent,
+          delivered: Math.max(0, remote.sent - remote.bounces),
+          opened: remote.views,
+          clicked: remote.clicks,
+          bounced: remote.bounces,
+        };
+      }
+      if (remote.status === 'finished' && cc.status !== 'SENT') {
+        cc.status = 'SENT';
+        cc.sentAt = now();
+        log(cc, 'Poslato', `${remote.sent} primalaca (Listmonk kampanja #${cc.listmonkCampaignId})`, 'Listmonk');
+        changed += 1;
+      } else if (remote.status === 'running' && cc.status === 'SCHEDULED') {
+        cc.status = 'RUNNING';
+        log(cc, 'Slanje počelo', `Listmonk kampanja #${cc.listmonkCampaignId}`, 'Listmonk');
+        changed += 1;
+      } else if (remote.status === 'cancelled' && cc.status !== 'CANCELLED') {
+        cc.status = 'CANCELLED';
+        cc.sendAt = null;
+        log(cc, 'Otkazano u Listmonk-u', `kampanja #${cc.listmonkCampaignId} otkazana direktno u motoru`, 'Listmonk');
+        changed += 1;
+      }
+    });
+  }
+  return changed;
 }
 
 function finishSend(store: Store, c: Campaign) {

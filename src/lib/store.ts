@@ -18,12 +18,29 @@ export function dataDir(): string {
 }
 
 let cache: Store | null = null;
+// Potpis fajla iz kog je keš učitan. Keš NIJE jedini u procesu: Next bundluje stranice, server
+// akcije i API rute kao odvojene module, pa svaki dobija svoju kopiju ovog modula i svoj `cache`
+// (uočeno 13.9.2026 — `/api/campaigns/[id]/preview` je javljao „Kampanja ne postoji" za kampanju
+// koju je stranica upravo upisala). Zato se pre svakog čitanja proverava da li je fajl na disku
+// noviji od keša; `stat` je jeftin, a isto pokriva i drugu instancu iza balansera.
+let cacheStamp: string | null = null;
+
+function fileStamp(): string | null {
+  try {
+    const st = fs.statSync(STORE_PATH);
+    return `${st.mtimeMs}:${st.size}`;
+  } catch {
+    return null;
+  }
+}
 
 export function getStore(): Store {
-  if (cache) return cache;
+  const stamp = fileStamp();
+  if (cache && stamp === cacheStamp) return cache;
   try {
-    if (fs.existsSync(STORE_PATH)) {
+    if (stamp !== null) {
       cache = normalize(JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as Store);
+      cacheStamp = stamp;
       return cache;
     }
   } catch {
@@ -51,6 +68,7 @@ function persist() {
   if (!cache) return;
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(STORE_PATH, JSON.stringify(cache, null, 2), 'utf8');
+  cacheStamp = fileStamp();
 }
 
 /** Sve izmene idu kroz ovu funkciju — mutira store i odmah upisuje na disk. */
@@ -68,6 +86,7 @@ export function mutate<T>(fn: (store: Store) => T): T {
  */
 export function reloadStore(): void {
   cache = null;
+  cacheStamp = null;
 }
 
 export function resetStore(): void {

@@ -1,0 +1,52 @@
+# Lokalni Listmonk za razvoj i probu adaptera (src/lib/listmonk.ts) protiv pravog API-ja.
+#   docker compose -f docker/listmonk/docker-compose.yml up -d
+# Admin UI: http://localhost:9000  (LISTMONK_ADMIN_USER / LISTMONK_ADMIN_PASSWORD iz .env ovde)
+# SMTP se u Listmonk podešavanjima usmerava na Mailpit sa host mašine (host.docker.internal:1025),
+# pa nijedan mejl ne izlazi napolje — sve se čita na http://localhost:8025.
+x-app-defaults: &app-defaults
+  image: listmonk/listmonk:latest
+  restart: unless-stopped
+  environment:
+    - TZ=Europe/Belgrade
+    - LISTMONK_app__address=0.0.0.0:9000
+    - LISTMONK_db__host=db
+    - LISTMONK_db__port=5432
+    - LISTMONK_db__user=listmonk
+    - LISTMONK_db__password=listmonk
+    - LISTMONK_db__database=listmonk
+    - LISTMONK_db__ssl_mode=disable
+    - LISTMONK_ADMIN_USER=${LISTMONK_ADMIN_USER:-admin}
+    - LISTMONK_ADMIN_PASSWORD=${LISTMONK_ADMIN_PASSWORD:-listmonk-dev-1234}
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: ot-listmonk-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=listmonk
+      - POSTGRES_PASSWORD=listmonk
+      - POSTGRES_DB=listmonk
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U listmonk']
+      interval: 5s
+      timeout: 5s
+      retries: 6
+    volumes:
+      - listmonk-data:/var/lib/postgresql/data
+
+  app:
+    <<: *app-defaults
+    container_name: ot-listmonk
+    ports:
+      - '9000:9000'
+    depends_on:
+      db:
+        condition: service_healthy
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    # --install --idempotent: prvi put pravi šemu i admin nalog, kasnije ne dira postojeće podatke.
+    command: [sh, -c, "./listmonk --install --idempotent --yes --config '' && ./listmonk --upgrade --yes --config '' && ./listmonk --config ''"]
+
+volumes:
+  listmonk-data:

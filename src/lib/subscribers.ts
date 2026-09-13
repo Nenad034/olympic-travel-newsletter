@@ -2,7 +2,7 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import { getStore, mutate, newId, now } from './store';
 import * as listmonk from './listmonk';
-import { CURRENT_USER, listIdNumber } from './campaigns';
+import { CURRENT_USER } from './campaigns';
 import { LIST_B2B_OPS, LIST_B2B_PROMO, LIST_B2C } from './seed';
 import type { Store, Subscriber, SubscriberEvent } from './types';
 
@@ -49,7 +49,7 @@ export async function subscribeFromPortal(input: {
   await listmonk.upsertSubscriber({
     email,
     name: input.name,
-    lists: [listIdNumber(LIST_B2B_OPS), listIdNumber(LIST_B2B_PROMO)],
+    lists: [LIST_B2B_OPS, LIST_B2B_PROMO].map((l) => listmonk.resolveListId(getStore(), l)),
     preconfirm: true, // B2B: nema double opt-in, poslovni kontekst
     attribs: { company: input.company, portal_account_id: input.portalAccountId, source: 'portal' },
   });
@@ -115,7 +115,7 @@ export async function subscribeFromBooking(input: {
   await listmonk.upsertSubscriber({
     email,
     name: input.name,
-    lists: [listIdNumber(LIST_B2C)],
+    lists: [listmonk.resolveListId(getStore(), LIST_B2C)],
     preconfirm: false, // pokreće Listmonk double opt-in mejl
     attribs: { booking_ref: input.bookingRef, source: 'booking', consent_at: now() },
   });
@@ -328,7 +328,7 @@ export async function addSubscriberManual(
   await listmonk.upsertSubscriber({
     email,
     name,
-    lists: listIds.map(listIdNumber),
+    lists: listIds.map((l) => listmonk.resolveListId(getStore(), l)),
     preconfirm: !needsDoubleOptin,
     attribs: {
       company,
@@ -581,7 +581,7 @@ export async function updateSubscriber(id: string, patch: SubscriberPatch): Prom
   await listmonk.upsertSubscriber({
     email,
     name,
-    lists: listIds.map(listIdNumber),
+    lists: listIds.map((l) => listmonk.resolveListId(getStore(), l)),
     preconfirm: !newDoubleOptin,
     attribs: { company, source: current.source.toLowerCase(), source_ref: sourceRef },
   });

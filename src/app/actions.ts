@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import * as campaigns from '@/lib/campaigns';
 import * as subs from '@/lib/subscribers';
+import * as listmonk from '@/lib/listmonk';
 import { mutate, resetStore } from '@/lib/store';
 import type { DmarcPhase } from '@/lib/types';
 
@@ -177,6 +178,21 @@ export const toggleProductionAccessAction = wrap(async (domain: string) => {
     d.productionAccess = !d.productionAccess;
   });
   revalidatePath('/podesavanja');
+});
+
+/** SES i domeni → „Poveži sa Listmonk-om": liste i šabloni u motoru, ID-jevi u store (§2). */
+export const syncListmonkAction = wrap(async () => {
+  const report = await listmonk.syncSetup();
+  revalidatePath('/podesavanja');
+  revalidatePath('/liste');
+  const created = report.lists.filter((l) => l.created).length;
+  const failed = report.subscribers.failed;
+  return (
+    `${report.lists.length} lista (${created} novih u Listmonk-u)` +
+    (report.createdTemplates.length ? `, ${report.createdTemplates.length} šablona napravljeno` : '') +
+    `, ${report.subscribers.synced} pretplatnika preneto` +
+    (failed.length ? `; ${failed.length} odbijeno — ${failed.slice(0, 3).map((f) => `${f.email}: ${f.error}`).join('; ')}` : '')
+  );
 });
 
 export const resetDemoDataAction = wrap(async () => {

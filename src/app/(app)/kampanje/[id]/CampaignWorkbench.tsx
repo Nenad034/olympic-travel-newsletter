@@ -67,6 +67,21 @@ export default function CampaignWorkbench({
     return init;
   });
   const [dirty, setDirty] = useState(false);
+  // Polja žive u lokalnom stanju (izmene pre „sačuvaj"), pa ih server sam ne osvežava. Kad se
+  // zapis na serveru promeni akcijom koja menja sadržaj (Claude popuni šablon), lokalna kopija se
+  // usklađuje — inače bi forma i dalje pokazivala prazna polja i držala „pošalji na odobrenje"
+  // onemogućenim. Usklađivanje tokom rendera (ne u efektu) — isti obrazac kao `lastPath` u Shell.tsx.
+  const [seenVersion, setSeenVersion] = useState(c.updatedAt);
+  if (seenVersion !== c.updatedAt) {
+    setSeenVersion(c.updatedAt);
+    setSubject(c.subject);
+    setFields(() => {
+      const next: Record<string, string> = {};
+      for (const p of placeholders) next[p.key] = c.contentData[p.key] ?? '';
+      return next;
+    });
+    setDirty(false);
+  }
   const [testTo, setTestTo] = useState((c.testRecipients.length ? c.testRecipients : defaultTestRecipients).join(', '));
   const [mode, setMode] = useState<'NOW' | 'SCHEDULE'>(c.sendAt ? 'SCHEDULE' : 'NOW');
   const [sendAt, setSendAt] = useState(toLocalInput(c.sendAt) || defaultSendAt());

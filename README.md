@@ -8,7 +8,7 @@ Vizuelna struktura je preuzeta iz Terminal Travel internog panela (VS Code obraz
 
 | Komponenta | Gde je u kodu |
 |---|---|
-| **Listmonk** (motor: liste, pretplatnici, kampanje, bounce obrada) | `src/lib/listmonk.ts` — REST adapter; bez `LISTMONK_URL` radi **mock** nad `data/store.json` |
+| **Listmonk** (motor: liste, pretplatnici, kampanje, bounce obrada) | `src/lib/listmonk.ts` — REST adapter (provereno protiv v6.2.0, spec §2.1); bez `LISTMONK_URL` radi **mock** nad `data/store.json` |
 | **Claude API** (punjenje šablona sadržajem, spec §5.2) | `src/lib/claude.ts` — `claude-opus-5`, structured output (JSON schema); bez `ANTHROPIC_API_KEY` radi lokalni popunjivač |
 | **Šabloni** (Claude Design → čist HTML sa `{{placeholder}}` poljima) | `src/lib/email-templates.ts` |
 | **Tok kampanje / human-approval gate / zakazivanje** | `src/lib/campaigns.ts` |
@@ -35,6 +35,14 @@ Nacrt ──(Claude popuni šablon)──▶ Nacrt ──▶ Čeka odobrenje ─
 npm install
 cp .env.example .env.local   # opciono: ANTHROPIC_API_KEY, LISTMONK_*
 npm run dev                  # http://localhost:3200
+```
+
+Pravi Listmonk lokalno (umesto mock-a), sa SMTP-om ka Mailpit-u na `localhost:1025` da nijedan mejl ne izađe:
+
+```bash
+docker compose -f docker/listmonk/docker-compose.yml up -d   # http://localhost:9000, admin / listmonk-dev-1234
+node scripts/listmonk-dev-setup.mjs                          # API korisnik + SMTP → Mailpit; ispiše redove za .env.local
+# zatim u aplikaciji: SES i domeni → „Poveži sa Listmonk-om" (liste, šabloni, prenos pretplatnika)
 ```
 
 Demo podaci (3 liste, 31 pretplatnik, 6 kampanja) se kreiraju automatski u `data/store.json`; reset je u „SES i domeni → Demo podaci“.

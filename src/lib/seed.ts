@@ -483,6 +483,9 @@ const settings: Settings = {
   minGapMinutes: 60,
   bigCampaignThreshold: 500,
   listmonkUrl: 'http://listmonk.internal:9000',
+  listmonkTxTemplateId: null,
+  listmonkCampaignTemplateId: null,
+  listmonkSyncedAt: null,
   cubeSyncEnabled: true,
   // Polazne granice potrošnje agenta — dovoljno za svakodnevan rad marketing tima, a daleko od
   // iznosa koji bi se neprimećeno nakupio. Konačan iznos je vlasnikova odluka (spec §10.3);

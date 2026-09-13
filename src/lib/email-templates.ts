@@ -138,7 +138,7 @@ export const B2C_TEMPLATE_HTML = shell({
   brandTag: 'Newsletter',
   body: offerBlock(1) + offerBlock(2) + offerBlock(3),
   footer: `Olympic Travel d.o.o. · Primate ovaj newsletter jer ste dali saglasnost pri rezervaciji.<br>
-            <a href="{UnsubscribeURL}" style="color:${GOLD};">Odjava</a> · <a href="{MessageURL}" style="color:${GOLD};">Pogledaj u pregledaču</a>`,
+            <a href="{{ UnsubscribeURL }}" style="color:${GOLD};">Odjava</a> · <a href="{{ MessageURL }}" style="color:${GOLD};">Pogledaj u pregledaču</a>`,
 });
 
 export const SEED_TEMPLATES: Template[] = [
@@ -157,7 +157,7 @@ export const SEED_TEMPLATES: Template[] = [
     name: 'B2C — sezonske ponude',
     audience: 'B2C',
     description:
-      'Tri ponude sa cenama, emotivan naslov, CTA ka sajtu. Obavezan Listmonk {UnsubscribeURL} u podnožju (double opt-in lista).',
+      'Tri ponude sa cenama, emotivan naslov, CTA ka sajtu. Obavezan Listmonk {{ UnsubscribeURL }} u podnožju (double opt-in lista).',
     html: B2C_TEMPLATE_HTML,
     placeholders: B2C_PLACEHOLDERS,
     updatedAt: '2026-09-01T09:00:00.000Z',
@@ -171,7 +171,7 @@ export function renderTemplate(
   opts: { unsubscribeAllowed: boolean },
 ): string {
   const unsubscribe = opts.unsubscribeAllowed
-    ? `<a href="{UnsubscribeURL}" style="color:${GOLD};">Odjava sa promotivnih obaveštenja</a> — odjava ne utiče na operativna obaveštenja (cenovnici, rokovi).`
+    ? `<a href="{{ UnsubscribeURL }}" style="color:${GOLD};">Odjava sa promotivnih obaveštenja</a> — odjava ne utiče na operativna obaveštenja (cenovnici, rokovi).`
     : 'Operativna obaveštenja se šalju svim aktivnim partnerima i ne podležu odjavi.';
   return html.replace(/\{\{(\w+)\}\}/g, (_m, key: string) => {
     if (key === 'unsubscribe_blok') return unsubscribe;

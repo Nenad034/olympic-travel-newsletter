@@ -17,7 +17,9 @@ export default function SettingsPage() {
       />
       <SettingsPanels
         settings={store.settings}
+        lists={store.lists}
         listmonkMode={listmonkMode()}
+        listmonkUrl={process.env.LISTMONK_URL ?? null}
         claudeLive={claudeConfigured()}
         budget={budgetState(store)}
       />

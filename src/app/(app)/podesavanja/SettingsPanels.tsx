@@ -11,12 +11,13 @@ import { Button } from '@/components/ui/button';
 import {
   resetDemoDataAction,
   setDmarcPhaseAction,
+  syncListmonkAction,
   toggleProductionAccessAction,
   updateSettingsAction,
   type ActionResult,
 } from '@/app/actions';
-import { fmtDate, fmtRelative } from '@/lib/datum';
-import type { DmarcPhase, Settings } from '@/lib/types';
+import { fmtDate, fmtDateTime, fmtRelative } from '@/lib/datum';
+import type { DmarcPhase, MailingList, Settings } from '@/lib/types';
 import type { AgentBudgetState, BudgetWindow } from '@/lib/agent-budget';
 
 const DMARC: { phase: DmarcPhase; label: string; desc: string }[] = [
@@ -58,7 +59,7 @@ function BudgetRow({ w, naziv }: { w: BudgetWindow; naziv: string }) {
   );
 }
 
-export default function SettingsPanels({ settings, listmonkMode, claudeLive, budget }: { settings: Settings; listmonkMode: 'LIVE' | 'MOCK'; claudeLive: boolean; budget: AgentBudgetState }) {
+export default function SettingsPanels({ settings, lists, listmonkMode, listmonkUrl, claudeLive, budget }: { settings: Settings; lists: MailingList[]; listmonkMode: 'LIVE' | 'MOCK'; listmonkUrl: string | null; claudeLive: boolean; budget: AgentBudgetState }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
@@ -74,10 +75,14 @@ export default function SettingsPanels({ settings, listmonkMode, claudeLive, bud
     setMsg(null);
     startTransition(async () => {
       const r = await fn();
-      setMsg(r.ok ? { tone: 'ok', text: ok } : { tone: 'danger', text: r.error });
+      // Akcija koja vrati tekst (npr. izveštaj sinhronizacije) ima prednost nad opštom porukom.
+      setMsg(r.ok ? { tone: 'ok', text: r.id ? `${ok} ${r.id}` : ok } : { tone: 'danger', text: r.error });
       router.refresh();
     });
   }
+
+  const live = listmonkMode === 'LIVE';
+  const unlinked = lists.filter((l) => l.listmonkListId == null).length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -88,7 +93,7 @@ export default function SettingsPanels({ settings, listmonkMode, claudeLive, bud
           <span className="flex h-9 w-9 items-center justify-center rounded-md bg-panel2 text-ink-dim"><Icon name="server" /></span>
           <div className="min-w-0 flex-1">
             <div className="text-xs font-medium text-ink">Listmonk motor</div>
-            <div className="truncate font-mono text-[11px] text-ink-faint">{listmonkMode === 'LIVE' ? settings.listmonkUrl : 'mock (data/store.json)'}</div>
+            <div className="truncate font-mono text-[11px] text-ink-faint">{live ? listmonkUrl : 'mock (data/store.json)'}</div>
           </div>
           <Badge variant={listmonkMode === 'LIVE' ? 'ok' : 'warn'}>{listmonkMode}</Badge>
         </div>
@@ -158,6 +163,46 @@ export default function SettingsPanels({ settings, listmonkMode, claudeLive, bud
               </Button>
             </div>
           ))}
+        </div>
+      </Section>
+
+      <Section title="Povezivanje sa Listmonk-om" icon="server" bodyClassName="p-4">
+        <p className="text-xs text-ink-dim">
+          Modul u motoru pravi svoje liste (po imenu) i dva šablona — transakcioni omotač za operativni tok i „čist“ kampanjski
+          omotač — i pamti njihove ID-jeve. Bez povezivanja LIVE slanje odbija da krene. Ponovno pokretanje ne pravi duplikate.
+        </p>
+        <table className="mt-3 w-full text-xs">
+          <tbody>
+            {lists.map((l) => (
+              <tr key={l.id} className="border-t border-border">
+                <td className="py-1.5 pr-3"><SegmentBadge segment={l.segment} /></td>
+                <td className="py-1.5 pr-3 text-ink">{l.name}</td>
+                <td className="py-1.5 text-right font-mono text-[11px] text-ink-faint">
+                  {l.listmonkListId == null ? <Badge variant={live ? 'warn' : 'secondary'}>nije povezana</Badge> : `Listmonk lista #${l.listmonkListId}`}
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t border-border">
+              <td className="py-1.5 pr-3 text-ink-faint" colSpan={2}>Transakcioni šablon (operativni tok, /api/tx)</td>
+              <td className="py-1.5 text-right font-mono text-[11px] text-ink-faint">{settings.listmonkTxTemplateId == null ? '—' : `#${settings.listmonkTxTemplateId}`}</td>
+            </tr>
+            <tr className="border-t border-border">
+              <td className="py-1.5 pr-3 text-ink-faint" colSpan={2}>Čist kampanjski omotač (promo / B2C)</td>
+              <td className="py-1.5 text-right font-mono text-[11px] text-ink-faint">{settings.listmonkCampaignTemplateId == null ? '—' : `#${settings.listmonkCampaignTemplateId}`}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <Button size="sm" disabled={pending || !live} onClick={() => run(() => syncListmonkAction(), 'Povezano:')}>
+            <Icon name="sync" className="!text-[12px]" /> poveži sa Listmonk-om
+          </Button>
+          <span className="text-[11px] text-ink-faint">
+            {!live
+              ? 'Dostupno samo u LIVE režimu (LISTMONK_URL, LISTMONK_API_USER, LISTMONK_API_TOKEN).'
+              : settings.listmonkSyncedAt
+                ? `Poslednje povezivanje ${fmtDateTime(settings.listmonkSyncedAt)}${unlinked ? ` · ${unlinked} nepovezanih` : ''}`
+                : 'Još nije povezivano.'}
+          </span>
         </div>
       </Section>
 

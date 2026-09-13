@@ -30,6 +30,9 @@ export interface MailingList {
   /** Operativni B2B tok nema odjavu — deo poslovnog odnosa, ne marketing. */
   unsubscribeAllowed: boolean;
   description: string;
+  /** ID iste liste u Listmonk-u, dobijen sinhronizacijom (`listmonk.syncSetup`). `null` dok se
+   * ne poveže — LIVE slanje tada odbija da krene. */
+  listmonkListId?: number | null;
 }
 
 export type SubscriberStatus = 'ENABLED' | 'UNCONFIRMED' | 'PAUSED' | 'BLOCKLISTED';
@@ -195,6 +198,11 @@ export interface Settings {
   minGapMinutes: number;
   bigCampaignThreshold: number;
   listmonkUrl: string;
+  /** Listmonk šabloni koje modul sam napravi pri sinhronizaciji: transakcioni omotač za
+   * operativni tok (§3.1.1) i „čist" kampanjski omotač (naš HTML već nosi {{ UnsubscribeURL }}). */
+  listmonkTxTemplateId?: number | null;
+  listmonkCampaignTemplateId?: number | null;
+  listmonkSyncedAt?: string | null;
   cubeSyncEnabled: boolean;
   /** Budžet AI agenta u EUR po periodu (spec §10.2). `null` = bez granice za taj period.
    * Prekoračenje ne gasi agenta — vraća ga na lokalan odgovor bez troška (`agent-budget.ts`). */
