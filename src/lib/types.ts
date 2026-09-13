@@ -196,6 +196,10 @@ export interface Settings {
   bigCampaignThreshold: number;
   listmonkUrl: string;
   cubeSyncEnabled: boolean;
+  /** Budžet AI agenta u EUR po periodu (spec §10.2). `null` = bez granice za taj period.
+   * Prekoračenje ne gasi agenta — vraća ga na lokalan odgovor bez troška (`agent-budget.ts`). */
+  agentDailyBudgetEur: number | null;
+  agentMonthlyBudgetEur: number | null;
 }
 
 /** Trag da je adresa obrisana na zahtev (spec §3.2). Čuva se hash, ne adresa — svrha je da
@@ -226,6 +230,9 @@ export interface AgentInvocation {
   model: string | null;
   inputTokens: number;
   outputTokens: number;
+  /** Procenjen trošak poziva u EUR (`agent-budget.ts`) — ulaz u budžet, ne knjigovodstvo.
+   * Upisuje se uz zapis da kasnija promena cenovnika ne prepiše istoriju potrošnje. */
+  costEur: number;
   latencyMs: number;
   iterations: number;
   tools: string[];

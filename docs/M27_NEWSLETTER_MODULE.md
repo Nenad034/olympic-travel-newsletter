@@ -169,13 +169,30 @@ Dve situacije automatski tok ne pokriva: prenos postojeće baze subagenata iz st
 
 Agent u panelu odgovara na pitanja o stanju baze, kampanja i isporuke. Obrazac je preuzet iz OmnisearchAgent-a u Terminal Travel panelu (`apps/api/src/modules/m15-ai-orkestracija/omnisearch`), jer rešava isti problem pod istim ograničenjem — čovek odobrava, agent ne izvršava.
 
-- **Alati su isključivo za čitanje** (`stanje_baze`, `nadji_pretplatnika`, `stanje_kampanja`, `stanje_isporuke`). Agent nema nijednu funkciju koja menja stanje; kad upit liči na zahtev za radnju, odgovor objašnjava radnju i vodi na ekran gde je čovek potvrđuje (§5.2).
+- **Alati su isključivo za čitanje** (`stanje_baze`, `nadji_pretplatnika`, `stanje_kampanja`, `sadrzaj_kampanje`, `stanje_isporuke`). Agent nema nijednu funkciju koja menja stanje; kad upit liči na zahtev za radnju, odgovor objašnjava radnju i vodi na ekran gde je čovek potvrđuje (§5.2).
+- **Sadržaj kampanja je vidljiv agentu** (`sadrzaj_kampanje`, odluka 13.9.2026): naslov mejla, brif, popunjena polja šablona i tekst tela poruke (HTML se pretvara u tekst, bez markup-a). Do odobrenja se telo menja svakom izmenom sadržaja, pa alat odvojeno vraća `telo_je_nacrt` — agent mora da kaže da je to ono što bi otišlo, a ne poruka koja je otišla. Uvid ne pomera granicu modula: nijedan alat i dalje ne menja stanje.
 - **Linkovi se izvode iz alata koji su stvarno pozvani**, ne iz modela — agent ne može da uputi na rutu koja ne postoji.
 - **Prompt injection**: rezultati alata nose slobodan tekst koji su upisali ljudi izvan marketing tima (ime i firma iz portala, osnov pristanka iz uvoza, brif kampanje). Sistemski prompt taj tekst tretira kao podatak koji se citira ili sažima, nikad kao instrukciju.
 - **Kontekst**: uz pitanje se šalje vidljiv tekst otvorene stranice i zapisi koje je korisnik svesno priložio („Dodaj u AI kontekst" na redu). Priložen zapis je referenca, ne sirov podatak — agent ga razrešava svojim alatom.
 - **Bez trajne memorije**: prethodne ture razgovora šalje panel uz svaki poziv (poslednjih 6), server ne čuva poruke.
-- **Dnevnik poziva** (`Store.agentInvocations`): vreme, model, tokeni, trajanje, iteracije i pozvani alati — **bez teksta upita**; dnevnik služi za uvid u potrošnju, ne za čitanje razgovora.
+- **Dnevnik poziva** (`Store.agentInvocations`): vreme, model, tokeni, procenjen trošak, trajanje, iteracije i pozvani alati — **bez teksta upita**; dnevnik služi za uvid u potrošnju, ne za čitanje razgovora.
+- **Budžet potrošnje** (`src/lib/agent-budget.ts`, odluka 13.9.2026): dnevna i mesečna granica u EUR (`Settings.agentDailyBudgetEur`, `agentMonthlyBudgetEur`; `null` = bez granice), potrošnja se **sabira iz dnevnika poziva**, ne iz posebnog brojača koji bi mogao da se sa njim raziđe. Dostignuta granica ne gasi agenta nego ga vraća na lokalan odgovor — isti alati i isti podaci, bez troška — i to kaže u odgovoru. Cenovnik je aproksimacija za praćenje, ne faktura (isti pristup kao M18 `agent-invocations/pricing.ts` u Terminal Travel).
 - **Bez API ključa** modul radi u mock režimu, pa agent sklapa odgovor lokalno iz istih alata i to jasno kaže — ne pretvara se da je model.
+
+### 9a.1 Polje za razgovor
+
+**Gde agent stoji** (obrazac iz Terminal Travel panela, dizajn dok. §6c.0 — `RightPanel.tsx`, `/ai-asistent`):
+
+- U **desnom panelu** agent je TRAJAN deo panela, naslagan **ispod brzih info** — nisu tabovi, oba dela su vidljiva odjednom. Otvaranje samog panela time kontroliše i pristup agentu; posebnog „upali/ugasi agenta" prekidača nema, jer bi mogao da ostane u stanju koje korisnik ne vidi. Linija između dva dela se prevlači (visina se pamti kao **procenat panela**, ne u pikselima — panel se ručno sužava i širi), a svaki deo se može sklopiti: sklopljene brze info puštaju agenta na ceo panel i obrnuto. Sklapanje je samo vizuelno — polje ostaje u DOM-u, pa se istorija razgovora ne gubi.
+- **Ikonica u desnoj traci** (dno, `RightRail.tsx`) otvara **poseban tab samo za agenta** (`/ai-agent`). To je ista komponenta, sa `fokus` režimom koji isključuje automatsko čitanje `#ot-main-content` — tamo je agent SAM taj sadržaj, pa bi inače uz svako pitanje dobijao sopstvenu istoriju. Tab ima **sopstveni razgovor**, namerno: montira se i odmontira zajedno sa tabom.
+- **Dno centralnog panela** je treća pozicija (kao Panel u VS Code), za rad uz širok sadržaj.
+
+Dokovano polje postoji **tačno jedno**. `Shell.tsx` ga montira jednom i fizički premešta njegov čvor između dva slota — desnog panela i dna centralnog panela — umesto da ga renderuje na dva mesta ili menja odredište portala; oba bi značila odmontiranje i gubitak istorije razgovora i nedovršenog teksta. Strelica u zaglavlju seli polje u oba smera, izbor se pamti u `localStorage`, a visina donjeg doka se menja prevlačenjem i takođe pamti.
+
+- **Glas**: `Web Speech API` u pregledaču — transkript prolazi kroz isti `send()` tok kao kucanje, zvuk se ne šalje na server niti čuva. Dugme se ne prikazuje u pregledačima bez podrške (nema polovičnog stanja).
+- **Prilog preko „+"**: slike (jpg/png/gif/webp do 5 MB) idu u base64 direktno u pregledaču i ulaze u poziv kao Claude Vision blokovi; dokumenti (txt/md/csv/json, html, pdf, docx, xlsx) idu na `POST /api/ai-context/extract-file`, koji izvlači tekst u memoriji i odbacuje fajl — ništa se ne piše na disk ni u store. Slika se može i nalepiti (Ctrl+V).
+- **Automatski kontekst**: naziv otvorenog taba i vidljiv tekst centralnog panela (`#ot-main-content`) prilažu se uz svako pitanje; „X" na čipu ukida oboje za taj tab.
+- **Linkovi u odgovoru** dolaze iz `/api/nav-items` registra — istog koji pune levi meni i paleta komandi.
 
 ---
 
@@ -193,6 +210,9 @@ Agent u panelu odgovara na pitanja o stanju baze, kampanja i isporuke. Obrazac j
 - **Zakazano slanje ne sme da zavisi od otvaranja stranice.** Obrada dospelih kampanja ide iz `src/instrumentation.ts` na interval (60 s, `SCHEDULER_INTERVAL_MS`), sa zaštitom od preklapanja tikova. Bez toga operativni tok — koji nema Listmonk `send_at` — ne bi otišao dok neko ne otvori panel.
 - **Dnevnik izmena pretplatnika.** Ko, kad, koje polje i stara → nova vrednost, po uzoru na istoriju kampanja; obavezno za pristanak, odjavu, vraćanje na listu, pauziranje i brisanje.
 - **Brisanje ostavlja suppression zapis.** Hash adrese, datum i razlog — bez toga bi obrisana adresa vratila se prvim uvozom stare baze. Ručni unos i CSV uvoz je odbijaju; povratak ide samo kroz portal ili booking, uz novu saglasnost.
+- **Scheduler u više instanci** (13.9.2026). Tajmer je po instanci, pa bi dve instance iza istog balansera obradile istu dospelu kampanju i poslale je dvaput; dotadašnja zaštita od preklapanja bila je zastavica u memoriji jednog procesa i drugom procesu nije značila ništa. Rešeno **zakupom na nivou skladišta** (`src/lib/scheduler-lock.ts`): fajl `data/scheduler.lock`, pravljen atomičnim `wx` upisom, sa rokom koji držalac produžava dok posao traje. Namerno NIJE izabrana „jedna određena instanca šalje" — njen pad bi zaustavio slanje dok je neko ručno ne zameni; ovako istekao zakup preuzima bilo koja živa instanca. Uz bravu ide i odbacivanje keša store-a na početku tika (`store.reloadStore`): bez toga bi brava sprečila istovremeno slanje, ali ne i ponovljeno slanje iz zastarele kopije. *Ostaje ograničenje:* ostale izmene (iz panela) i dalje pišu ceo JSON kao celinu — puna sigurnost u više instanci dolazi tek sa pravom bazom iza Listmonk-a, brava pokriva slanje, koje je nepovratno.
+- **Budžet potrošnje agenta** (13.9.2026). Dnevna i mesečna granica u EUR, podesive na ekranu SES i domeni; potrošnja se sabira iz dnevnika poziva (jedan izvor istine umesto brojača koji bi se s njim razišao). Prekoračenje **ne gasi agenta** nego ga vraća na lokalan odgovor bez troška — modul ostaje upotrebljiv, a korisnik u odgovoru vidi zašto je drugačiji. Detalji u §9a.
+- **Agent vidi sadržaj kampanja** (13.9.2026, vlasnikova odluka). Do sada je video samo brojno stanje, pa na pitanje „šta piše u ovoj kampanji" nije mogao ništa osim da uputi na ekran. Alat `sadrzaj_kampanje` vraća naslov, brif, popunjena polja i tekst tela; granica modula se ne pomera, jer je i dalje isključivo čitanje. Detalji u §9a.
 
 ### 10.3 I dalje otvoreno
 
@@ -201,6 +221,4 @@ Agent u panelu odgovara na pitanja o stanju baze, kampanja i isporuke. Obrazac j
 - Da li custom UI sloj ide kao zaseban modul ili deo postojećeg content/marketing agent interfejsa.
 - Retencija test/staging liste i ko su interni test primaoci.
 - Rok čuvanja suppression zapisa — hash nije ličan podatak u istom smislu, ali lista ne treba da raste zauvek.
-- Budžet i limit potrošnje po korisniku za agenta (Terminal Travel to rešava u M18 `ai-agent-budgets`, ovde zasad postoji samo dnevnik poziva).
-- Da li agent treba da vidi i sadržaj kampanja (brif, HTML) ili da ostane na brojnom stanju.
-- Ponašanje schedulera kad aplikacija radi u više instanci: tajmer je po instanci, pa bi dve instance obradile istu kampanju; traži zaključavanje na nivou store-a ili jednu određenu instancu.
+- Tačan iznos budžeta agenta u EUR (mehanizam i podrazumevane vrednosti postoje, §10.2 — iznos je vlasnikova odluka). Granica **po korisniku** ostaje otvorena dok modul ima jedan nalog.

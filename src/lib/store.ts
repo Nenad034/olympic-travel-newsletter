@@ -12,6 +12,11 @@ import { buildSeed } from './seed';
 const DATA_DIR = process.env.NEWSLETTER_DATA_DIR ?? path.join(process.cwd(), 'data');
 const STORE_PATH = path.join(DATA_DIR, 'store.json');
 
+/** Direktorijum podataka — scheduler ovde drži i svoju bravu (`scheduler-lock.ts`). */
+export function dataDir(): string {
+  return DATA_DIR;
+}
+
 let cache: Store | null = null;
 
 export function getStore(): Store {
@@ -34,6 +39,10 @@ function normalize(store: Store): Store {
   store.subscriberAudit ??= [];
   store.suppressions ??= [];
   store.agentInvocations ??= [];
+  // `??=` ovde ne valja: `null` je PUNOVAŽNA vrednost („bez granice"), a `??=` bi je prepisao
+  // podrazumevanom. Dopunjava se samo polje koje zaista nedostaje.
+  if (store.settings.agentDailyBudgetEur === undefined) store.settings.agentDailyBudgetEur = 5;
+  if (store.settings.agentMonthlyBudgetEur === undefined) store.settings.agentMonthlyBudgetEur = 60;
   for (const s of store.subscribers) s.history ??= [];
   return store;
 }
@@ -50,6 +59,15 @@ export function mutate<T>(fn: (store: Store) => T): T {
   const result = fn(store);
   persist();
   return result;
+}
+
+/**
+ * Odbacuje keš da sledeće čitanje ide sa diska. Potrebno kad aplikacija radi u VIŠE instanci:
+ * druga instanca je u međuvremenu mogla da upiše izmene, a ovaj proces bi i dalje radio nad
+ * svojom starom kopijom (i, u slučaju schedulera, ponovo poslao već poslatu kampanju).
+ */
+export function reloadStore(): void {
+  cache = null;
 }
 
 export function resetStore(): void {

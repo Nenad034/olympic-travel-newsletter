@@ -1,23 +1,23 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import Icon from './Icon';
 import ThemeToggle from './ThemeToggle';
 import { useTabs } from './TabsContext';
 
 // Desna vertikalna traka — ogledalo ActivityBar-a: tema, "čeka odobrenje" inbox, desni panel.
+// Ikonica agenta stoji na DNU trake (obrazac iz Terminal Travel panela) i otvara POSEBAN TAB
+// samo za agenta; dokovano polje se ne pali odavde — ono je trajan deo desnog panela.
 export default function RightRail({
   rightPanelOpen,
   onToggleRightPanel,
-  agentOpen,
-  onToggleAgent,
 }: {
   rightPanelOpen: boolean;
   onToggleRightPanel: () => void;
-  agentOpen: boolean;
-  onToggleAgent: () => void;
 }) {
   const { openTab } = useTabs();
+  const pathname = usePathname();
   const [pending, setPending] = useState<number | null>(null);
 
   useEffect(() => {
@@ -57,7 +57,7 @@ export default function RightRail({
       </button>
       <button
         onClick={onToggleRightPanel}
-        title="Desni panel — sažetak i pomoć"
+        title="Desni panel — brze info, pomoć i agent"
         className={`flex h-[36px] w-[36px] flex-shrink-0 items-center justify-center rounded-md ${
           rightPanelOpen
             ? 'bg-accent-soft text-accent-strong'
@@ -75,10 +75,10 @@ export default function RightRail({
       </button>
       <div className="relative mt-auto flex-shrink-0">
         <button
-          onClick={onToggleAgent}
-          title="Agent — pitaj o stanju baze, kampanja i isporuke (ne izvršava radnje)"
+          onClick={() => openTab('/ai-agent', 'AI agent')}
+          title="AI agent u posebnom tabu — pitaj o bazi, kampanjama i njihovom sadržaju (ne izvršava radnje)"
           className={`flex h-[36px] w-[36px] items-center justify-center rounded-md ${
-            agentOpen
+            pathname === '/ai-agent'
               ? 'bg-accent-soft text-accent-strong'
               : 'bg-panel text-ink-faint hover:bg-panel2 hover:text-ink'
           }`}

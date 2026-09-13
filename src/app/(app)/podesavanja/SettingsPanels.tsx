@@ -17,6 +17,7 @@ import {
 } from '@/app/actions';
 import { fmtDate, fmtRelative } from '@/lib/datum';
 import type { DmarcPhase, Settings } from '@/lib/types';
+import type { AgentBudgetState, BudgetWindow } from '@/lib/agent-budget';
 
 const DMARC: { phase: DmarcPhase; label: string; desc: string }[] = [
   { phase: 'NONE', label: 'p=none', desc: 'Monitoring — par nedelja, čitaju se izveštaji' },
@@ -24,7 +25,40 @@ const DMARC: { phase: DmarcPhase; label: string; desc: string }[] = [
   { phase: 'REJECT', label: 'p=reject', desc: 'Neusklađeno se odbija' },
 ];
 
-export default function SettingsPanels({ settings, listmonkMode, claudeLive }: { settings: Settings; listmonkMode: 'LIVE' | 'MOCK'; claudeLive: boolean }) {
+/** Prazno polje znači „bez granice" — 0 bi se čitalo kao „budžet je 0 €", što je nešto drugo. */
+function parseLimit(raw: string): number | null {
+  const value = Number(raw.replace(',', '.'));
+  return raw.trim() === '' || !Number.isFinite(value) || value <= 0 ? null : value;
+}
+
+function BudgetRow({ w, naziv }: { w: BudgetWindow; naziv: string }) {
+  const pct = w.limitEur ? Math.min(100, (w.spentEur / w.limitEur) * 100) : 0;
+  return (
+    <div>
+      <div className="flex items-baseline justify-between text-xs">
+        <span className="text-ink-dim">
+          {naziv} · {w.pozivi} {w.pozivi === 1 ? 'poziv' : 'poziva'}
+        </span>
+        <span className={w.exceeded ? 'font-semibold text-danger' : 'text-ink'}>
+          {w.spentEur.toFixed(2).replace('.', ',')} €{' '}
+          <span className="text-ink-faint">
+            / {w.limitEur === null ? 'bez granice' : `${w.limitEur.toFixed(2).replace('.', ',')} €`}
+          </span>
+        </span>
+      </div>
+      {w.limitEur !== null && (
+        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-sunken">
+          <div
+            style={{ width: `${pct}%` }}
+            className={`h-full rounded-full ${w.exceeded ? 'bg-danger' : 'bg-accent'}`}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function SettingsPanels({ settings, listmonkMode, claudeLive, budget }: { settings: Settings; listmonkMode: 'LIVE' | 'MOCK'; claudeLive: boolean; budget: AgentBudgetState }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
@@ -33,6 +67,8 @@ export default function SettingsPanels({ settings, listmonkMode, claudeLive }: {
   const [reengagement, setReengagement] = useState(settings.reengagementEnabled);
   const [minGap, setMinGap] = useState(settings.minGapMinutes);
   const [threshold, setThreshold] = useState(settings.bigCampaignThreshold);
+  const [dailyBudget, setDailyBudget] = useState(settings.agentDailyBudgetEur?.toString() ?? '');
+  const [monthlyBudget, setMonthlyBudget] = useState(settings.agentMonthlyBudgetEur?.toString() ?? '');
 
   function run(fn: () => Promise<ActionResult>, ok: string) {
     setMsg(null);
@@ -167,6 +203,30 @@ export default function SettingsPanels({ settings, listmonkMode, claudeLive }: {
           </div>
           <p className="mt-1 text-[11px] text-ink-faint">Kalendar i odobrenje upozoravaju kad su dve kampanje zakazane bliže od ovog razmaka (preporuka 30–60 min).</p>
           <Button size="sm" className="mt-3" disabled={pending} onClick={() => run(() => updateSettingsAction({ minGapMinutes: minGap, bigCampaignThreshold: threshold }), 'Razmak sačuvan.')}>
+            <Icon name="save" className="!text-[12px]" /> sačuvaj
+          </Button>
+        </Section>
+
+        <Section title="Budžet AI agenta" icon="sparkle" bodyClassName="p-4">
+          <div className="flex flex-col gap-2">
+            <BudgetRow w={budget.daily} naziv="Danas" />
+            <BudgetRow w={budget.monthly} naziv="Ovaj mesec" />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Dnevna granica (EUR)</label>
+              <input className="input" placeholder="bez granice" value={dailyBudget} onChange={(e) => setDailyBudget(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Mesečna granica (EUR)</label>
+              <input className="input" placeholder="bez granice" value={monthlyBudget} onChange={(e) => setMonthlyBudget(e.target.value)} />
+            </div>
+          </div>
+          <p className="mt-1 text-[11px] text-ink-faint">
+            Potrošnja se sabira iz dnevnika poziva agenta, po procenjenom cenovniku modela — orijentir za praćenje, ne faktura.
+            Kad je granica dostignuta, agent ne prestaje da radi: odgovara lokalno, iz istih podataka i bez troška, dok ne počne nov period ili dok se granica ne podigne.
+          </p>
+          <Button size="sm" className="mt-3" disabled={pending} onClick={() => run(() => updateSettingsAction({ agentDailyBudgetEur: parseLimit(dailyBudget), agentMonthlyBudgetEur: parseLimit(monthlyBudget) }), 'Budžet agenta sačuvan.')}>
             <Icon name="save" className="!text-[12px]" /> sačuvaj
           </Button>
         </Section>

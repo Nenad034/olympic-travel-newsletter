@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Icon from './Icon';
+import { useTabs } from './TabsContext';
 import SubscriberEditor from './SubscriberEditor';
 import { SegmentBadge, SubscriberStatusBadge } from './Badges';
 import { Badge } from './ui/badge';
@@ -312,18 +313,105 @@ function SubscriberQuickInfo({ target }: { target: SubscriberInspect }) {
   );
 }
 
-export default function RightPanel({ onClose }: { onClose: () => void }) {
+/** Visina agenta se čuva kao PROCENAT panela, ne u pikselima — desni panel se ručno sužava i
+ * širi (Shell.tsx), pa bi fiksna visina u pikselima svaki put značila drugu podelu. */
+const CHAT_HEIGHT_KEY = 'ot-newsletter-right-chat-height';
+const DEFAULT_CHAT_PERCENT = 45;
+
+function clampPercent(value: number): number {
+  return Math.min(80, Math.max(15, value));
+}
+
+/**
+ * Desni panel — DVA naslagana dela, oba vidljiva odjednom (nisu tabovi): brze info / pomoć za
+ * sekciju gore, agent dole. Obrazac iz Terminal Travel panela (`RightPanel.tsx`, dizajn dok.
+ * §6c.0): agent je TRAJAN deo ovog panela, pa otvaranje panela ujedno znači i pristup agentu —
+ * nema posebnog „upali/ugasi agenta" prekidača koji bi mogao da ostane u nejasnom stanju.
+ *
+ * Linija između dva dela se prevlači, a svaki deo se može sklopiti kad nije potreban: sklopljen
+ * gornji deo pušta agenta da zauzme ceo panel, sklopljen agent vraća ceo panel brzim info.
+ * Sklapanje je SAMO vizuelno — `AiChatBox` (koji Shell.tsx portalom stavlja u slot ispod) ostaje
+ * u DOM-u, inače bi se sa njim izgubila istorija razgovora.
+ */
+export default function RightPanel({
+  onClose,
+  aiDock,
+  aiSlotRef,
+  onMoveAiToBottom,
+}: {
+  onClose: () => void;
+  /** Gde je trenutno jedini dokovani `AiChatBox` (Shell.tsx) — ovde ili u dnu centralnog panela. */
+  aiDock: 'right' | 'bottom';
+  /** Mesto u koje Shell.tsx premešta `AiChatBox` kad je `aiDock === 'right'`. */
+  aiSlotRef: (el: HTMLDivElement | null) => void;
+  onMoveAiToBottom: () => void;
+}) {
   const pathname = usePathname();
   const { target, inspect } = useInspector();
+  const { openTab } = useTabs();
   const block = HELP.find((h) => h.match(pathname)) ?? HELP[0];
 
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [topCollapsed, setTopCollapsed] = useState(false);
+  const [chatCollapsed, setChatCollapsed] = useState(false);
+  const [chatPercent, setChatPercent] = useState(DEFAULT_CHAT_PERCENT);
+
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem(CHAT_HEIGHT_KEY));
+      if (Number.isFinite(saved) && saved > 0) setChatPercent(clampPercent(saved));
+    } catch {
+      /* localStorage nedostupan — ostaje podrazumevana podela */
+    }
+  }, []);
+
+  function handleDividerPointerDown() {
+    const el = containerRef.current;
+    if (!el) return;
+    function onMove(ev: PointerEvent) {
+      const rect = el!.getBoundingClientRect();
+      setChatPercent(clampPercent(((rect.bottom - ev.clientY) / rect.height) * 100));
+    }
+    function onUp() {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      setChatPercent((p) => {
+        try {
+          localStorage.setItem(CHAT_HEIGHT_KEY, String(p));
+        } catch {
+          /* podela važi za ovu sesiju, samo se ne pamti */
+        }
+        return p;
+      });
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    // Pregledač sam prekida pokazivač (sistemski meni, gubitak prozora) — bez ovoga `pointerup`
+    // nikad ne stigne i prevlačenje ostaje „upaljeno".
+    window.addEventListener('pointercancel', onUp);
+  }
+
+  const aiHere = aiDock === 'right';
+
   return (
-    <aside className="flex h-full w-full flex-col overflow-y-auto bg-panel-2 pb-3 text-xs">
+    <aside ref={containerRef} className="flex h-full w-full flex-col overflow-hidden bg-panel-2 text-xs">
       <div className="flex h-[29px] flex-shrink-0 items-center justify-between px-3">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
           {target ? 'Brze info' : 'Povezano'}
         </span>
         <div className="flex items-center">
+          {/* Sklapanje gornjeg dela postoji da bi agent dobio ceo panel — kad agent nije ovde,
+              dugme nema šta da postigne, pa se ni ne prikazuje. */}
+          {aiHere && (
+            <button
+              onClick={() => setTopCollapsed((v) => !v)}
+              title={topCollapsed ? 'Prikaži brze info' : 'Sklopi ovaj deo (agent zauzima ceo panel)'}
+              className="flex h-[29px] w-[29px] items-center justify-center rounded text-ink-faint hover:bg-panel hover:text-ink"
+            >
+              <Icon name={topCollapsed ? 'chevron-down' : 'chevron-up'} />
+            </button>
+          )}
           {target && (
             <button
               onClick={() => inspect(null)}
@@ -343,33 +431,96 @@ export default function RightPanel({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
-      {target ? (
-        <SubscriberQuickInfo key={target.subscriber.id} target={target} />
-      ) : (
-        <>
-          <div className="mx-2 rounded-lg border border-border bg-panel">
-            <div className="section-head rounded-t-lg">
-              <Icon name="info" /> {block.title}
+      {/* Kad je agent premešten u dno centralnog panela, gornji deo se NE sme držati sklopljenim
+          — panel bi ostao prazan, bez ijednog vidljivog razloga zašto. */}
+      <div
+        className={
+          topCollapsed && aiHere
+            ? 'h-0 overflow-hidden'
+            : 'min-h-0 flex-1 overflow-y-auto pb-3'
+        }
+      >
+        {target ? (
+          <SubscriberQuickInfo key={target.subscriber.id} target={target} />
+        ) : (
+          <>
+            <div className="mx-2 rounded-lg border border-border bg-panel">
+              <div className="section-head rounded-t-lg">
+                <Icon name="info" /> {block.title}
+              </div>
+              <ul className="flex flex-col gap-2 p-3 text-ink-dim">
+                {block.points.map((p) => (
+                  <li key={p} className="flex gap-2">
+                    <span className="mt-[3px] h-1.5 w-1.5 flex-shrink-0 rounded-full bg-accent" />
+                    <span>{p}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <ul className="flex flex-col gap-2 p-3 text-ink-dim">
-              {block.points.map((p) => (
-                <li key={p} className="flex gap-2">
-                  <span className="mt-[3px] h-1.5 w-1.5 flex-shrink-0 rounded-full bg-accent" />
-                  <span>{p}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="mx-2 mt-2 rounded-lg border border-border bg-panel">
-            <div className="section-head rounded-t-lg">
-              <Icon name="book" /> Princip
+            <div className="mx-2 mt-2 rounded-lg border border-border bg-panel">
+              <div className="section-head rounded-t-lg">
+                <Icon name="book" /> Princip
+              </div>
+              <p className="p-3 text-ink-dim">
+                <strong className="text-ink">Agent priprema, čovek odobrava.</strong> Masovno slanje
+                je nepovratno — nijedna kampanja ne odlazi u Listmonk bez potvrde osobe iz marketing
+                tima.
+              </p>
             </div>
-            <p className="p-3 text-ink-dim">
-              <strong className="text-ink">Agent priprema, čovek odobrava.</strong> Masovno slanje je
-              nepovratno — nijedna kampanja ne odlazi u Listmonk bez potvrde osobe iz marketing tima.
-            </p>
+          </>
+        )}
+      </div>
+
+      {/* Linija se prikazuje samo kad ima šta stvarno da se deli — prevlačenje sa sklopljenim
+          delom ne bi imalo šta da promeni. */}
+      {aiHere && !topCollapsed && !chatCollapsed && (
+        <div
+          onPointerDown={handleDividerPointerDown}
+          title="Prevuci za promenu visine agenta"
+          className="h-1.5 flex-shrink-0 cursor-row-resize border-t border-transparent hover:border-accent"
+        />
+      )}
+
+      {aiHere && (
+        <div
+          className={`flex flex-shrink-0 flex-col overflow-hidden border-t border-border bg-panel-2 ${
+            chatCollapsed ? 'h-9' : topCollapsed ? 'flex-1' : ''
+          }`}
+          style={!chatCollapsed && !topCollapsed ? { height: `${chatPercent}%` } : undefined}
+        >
+          <div className="flex h-9 flex-shrink-0 items-center justify-between px-2 text-xs font-medium text-ink-faint">
+            <span className="flex items-center gap-1.5">
+              <Icon name="sparkle" className="text-accent-strong" /> Agent
+            </span>
+            <div className="flex items-center gap-1">
+              {/* Strelica ka centralnom panelu — premešta ISTO polje u donji dok, ne pravi drugo. */}
+              <button
+                onClick={onMoveAiToBottom}
+                title="Prebaci agenta u dno centralnog panela"
+                className="flex h-[29px] w-[29px] items-center justify-center rounded text-ink-faint hover:bg-panel hover:text-ink"
+              >
+                <Icon name="arrow-left" />
+              </button>
+              <button
+                onClick={() => openTab('/ai-agent', 'AI agent')}
+                title="Otvori agenta u posebnom tabu"
+                className="flex h-[29px] w-[29px] items-center justify-center rounded text-ink-faint hover:bg-panel hover:text-ink"
+              >
+                <Icon name="screen-full" />
+              </button>
+              <button
+                onClick={() => setChatCollapsed((v) => !v)}
+                title={chatCollapsed ? 'Prikaži agenta' : 'Sklopi agenta (brze info zauzimaju panel)'}
+                className="flex h-[29px] w-[29px] items-center justify-center rounded text-ink-faint hover:bg-panel hover:text-ink"
+              >
+                <Icon name={chatCollapsed ? 'chevron-up' : 'chevron-down'} />
+              </button>
+            </div>
           </div>
-        </>
+          {/* Slot, ne sam `AiChatBox` — jedini dokovani primerak drži Shell.tsx i premešta ga
+              ovde ILI u dno centralnog panela, pa selidba ne gubi istoriju razgovora. */}
+          <div ref={aiSlotRef} className={chatCollapsed ? 'hidden' : 'min-h-0 flex-1 overflow-hidden'} />
+        </div>
       )}
     </aside>
   );

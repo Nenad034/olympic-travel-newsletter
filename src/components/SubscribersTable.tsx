@@ -154,7 +154,7 @@ export default function SubscribersTable({
                   <TableCell className="whitespace-nowrap text-ink-dim">{s.lastOpenAt ? fmtRelative(s.lastOpenAt) : '—'}</TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                      <Button size="sm" variant="ghost" disabled={atCapacity} title={atCapacity ? 'Kontekst agenta je pun' : 'Dodaj u AI kontekst'} onClick={() => addRecord('PRETPLATNIK', `${s.name} <${s.email}>`)}>
+                      <Button size="sm" variant="ghost" disabled={atCapacity} title={atCapacity ? 'Najviše 8 stavki u kontekstu odjednom' : 'Dodaj u kontekst agenta'} onClick={() => addRecord(`${s.name} <${s.email}>`)}>
                         <Icon name="sparkle" className="!text-[12px]" />
                       </Button>
                       {s.status === 'UNCONFIRMED' && (

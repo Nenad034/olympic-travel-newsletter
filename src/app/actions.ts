@@ -148,6 +148,9 @@ export const updateSettingsAction = wrap(
     reengagementEnabled?: boolean;
     minGapMinutes?: number;
     bigCampaignThreshold?: number;
+    /** `null` je punovažna vrednost — „bez granice" za taj period (spec §10.2). */
+    agentDailyBudgetEur?: number | null;
+    agentMonthlyBudgetEur?: number | null;
   }) => {
     mutate((store) => {
       Object.assign(store.settings, patch);

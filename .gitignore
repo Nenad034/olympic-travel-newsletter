@@ -11,4 +11,6 @@ next-env.d.ts
 coverage/
 # Lokalna file-backed baza (data/store.json) — seme se pravi iznova iz src/lib/seed.ts
 data/store.json
+# Zakup schedulera (src/lib/scheduler-lock.ts) — runtime stanje jedne mašine, ne izvorni kod
+data/scheduler.lock
 .DS_Store
