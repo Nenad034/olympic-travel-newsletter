@@ -127,7 +127,14 @@ function TypewriterText({ text }: { text: string }) {
   return <p className="whitespace-pre-wrap">{shown}</p>;
 }
 
-export default function AiChatBox() {
+export default function AiChatBox({
+  fokus = false,
+}: {
+  /** Polje je SÂM sadržaj taba `/ai-agent`, ne dokovan deo panela. Tada nema šta da se
+   * „priloži sa ekrana" — ekran je ovaj razgovor, pa bi automatsko čitanje `#ot-main-content`
+   * značilo da agent uz svako pitanje dobija sopstvenu istoriju. */
+  fokus?: boolean;
+} = {}) {
   const { tabs, activeTabId, openTab } = useTabs();
   const {
     items: contextItems,
@@ -185,7 +192,8 @@ export default function AiChatBox() {
     setDismissedForPath(null);
   }
 
-  const autoContext = !isEmptyHome && dismissedForPath !== activePath ? activeTab!.label : null;
+  const autoContext =
+    !fokus && !isEmptyHome && dismissedForPath !== activePath ? activeTab!.label : null;
   const manualRecordLabels = new Set(
     contextItems.filter((i) => i.type === 'RECORD').map((i) => (i as { refLabel: string }).refLabel),
   );
@@ -196,7 +204,7 @@ export default function AiChatBox() {
 
   /** Vidljiv tekst centralnog taba. Isto pravilo uklanjanja kao naziv taba: X na čipu prekida i ovo. */
   function readPageContent(): string | undefined {
-    if (dismissedForPath === activePath) return undefined;
+    if (fokus || dismissedForPath === activePath) return undefined;
     const text = document.getElementById(MAIN_CONTENT_ID)?.innerText?.trim();
     return text ? text.slice(0, PAGE_CONTENT_MAX_CHARS) : undefined;
   }

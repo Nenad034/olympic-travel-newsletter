@@ -484,6 +484,11 @@ const settings: Settings = {
   bigCampaignThreshold: 500,
   listmonkUrl: 'http://listmonk.internal:9000',
   cubeSyncEnabled: true,
+  // Polazne granice potrošnje agenta — dovoljno za svakodnevan rad marketing tima, a daleko od
+  // iznosa koji bi se neprimećeno nakupio. Konačan iznos je vlasnikova odluka (spec §10.3);
+  // ovo je podrazumevana vrednost, ne ona.
+  agentDailyBudgetEur: 5,
+  agentMonthlyBudgetEur: 60,
 };
 
 const events: DeliveryEvent[] = [

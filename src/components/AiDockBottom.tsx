@@ -2,14 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
+import { useTabs } from './TabsContext';
 
 // Agent u DNU CENTRALNOG PANELA — druga moguća pozicija istog polja, kao Panel u VS Code.
 // Stoji ispod sadržaja, iznad statusne trake, i zauzima SAMO širinu centralne kolone: ne ide
 // ispod leve trake ni desnog panela.
 //
-// Ovo NIJE drugo polje za razgovor. Postoji tačno jedan `AiChatBox` u aplikaciji; ovde se samo
-// prikazuje na drugom mestu (Shell.tsx fizički premešta njegov čvor u ovaj slot), pa se istorija
-// razgovora ne gubi pri premeštanju. Dva odvojena polja bi se prvom izmenom razišla.
+// Ovo NIJE drugo polje za razgovor. Dokovani `AiChatBox` je jedan; ovde se samo prikazuje na
+// drugom mestu (Shell.tsx fizički premešta njegov čvor u ovaj slot), pa se istorija razgovora ne
+// gubi pri premeštanju. Dva odvojena dokovana polja bi se prvom izmenom razišla. Poseban tab
+// `/ai-agent` JESTE zaseban razgovor — namerno, jer se sa tabom i zatvara.
 
 const HEIGHT_KEY = 'ot-newsletter-ai-dock-height';
 const DEFAULT_HEIGHT = 260;
@@ -19,13 +21,12 @@ const COLLAPSED_HEIGHT = 36;
 export default function AiDockBottom({
   slotRef,
   onMoveToRight,
-  onClose,
 }: {
-  /** Mesto u koje Shell.tsx premešta jedini `AiChatBox`. */
+  /** Mesto u koje Shell.tsx premešta jedini dokovani `AiChatBox`. */
   slotRef: (el: HTMLDivElement | null) => void;
   onMoveToRight: () => void;
-  onClose: () => void;
 }) {
+  const { openTab } = useTabs();
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const [collapsed, setCollapsed] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -114,11 +115,11 @@ export default function AiDockBottom({
             <Icon name={collapsed ? 'chevron-up' : 'chevron-down'} />
           </button>
           <button
-            onClick={onClose}
-            title="Zatvori agenta"
+            onClick={() => openTab('/ai-agent', 'AI agent')}
+            title="Otvori agenta u posebnom tabu"
             className="flex h-[29px] w-[29px] items-center justify-center rounded text-ink-faint hover:bg-panel-2 hover:text-ink"
           >
-            <Icon name="close" />
+            <Icon name="screen-full" />
           </button>
         </div>
       </div>

@@ -4,6 +4,7 @@ import SettingsPanels from './SettingsPanels';
 import { getStore } from '@/lib/store';
 import { listmonkMode } from '@/lib/listmonk';
 import { claudeConfigured } from '@/lib/claude';
+import { budgetState } from '@/lib/agent-budget';
 
 export default function SettingsPage() {
   const store = getStore();
@@ -18,6 +19,7 @@ export default function SettingsPage() {
         settings={store.settings}
         listmonkMode={listmonkMode()}
         claudeLive={claudeConfigured()}
+        budget={budgetState(store)}
       />
     </div>
   );
