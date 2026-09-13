@@ -419,7 +419,15 @@ export async function refreshLiveStatuses(): Promise<number> {
     try {
       remote = await listmonk.getCampaign(c.listmonkCampaignId!);
     } catch (e) {
-      mutate((s) => log(requireCampaign(s, c.id), 'Provera stanja u Listmonk-u nije uspela', e instanceof Error ? e.message : String(e), 'Listmonk'));
+      // Ista greška na svakom tiku (npr. ID koji u motoru ne postoji) upisuje se JEDNOM — inače
+      // bi dnevnik rastao za jednu stavku u minutu dok neko ne primeti.
+      const note = e instanceof Error ? e.message : String(e);
+      mutate((s) => {
+        const cc = requireCampaign(s, c.id);
+        const last = cc.history[cc.history.length - 1];
+        if (last?.action === 'Provera stanja u Listmonk-u nije uspela' && last.note === note) return;
+        log(cc, 'Provera stanja u Listmonk-u nije uspela', note, 'Listmonk');
+      });
       continue;
     }
     if (!remote) continue;

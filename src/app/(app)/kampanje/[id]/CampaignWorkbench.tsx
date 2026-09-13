@@ -254,7 +254,9 @@ export default function CampaignWorkbench({
           </Section>
 
           <Section title="Istorija" icon="history">
-            <ul>
+            {/* Najnovije prvo; visina je ~10 stavki, ostatak se skroluje (traka je globalno nevidljiva,
+                globals.css) — dnevnik dugovečne kampanje inače razvuče ceo ekran. */}
+            <ul className="max-h-[490px] overflow-y-auto">
               {[...c.history].reverse().map((h, i) => (
                 <li key={i} className="flex items-start gap-3 border-b border-border px-4 py-2 text-xs last:border-b-0">
                   <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-accent" />
